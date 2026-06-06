@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, clearSessionToken } from "@/lib/api";
 
 export interface Me {
   id: number;
@@ -28,6 +28,7 @@ export function useLogout() {
   const qc = useQueryClient();
   return async () => {
     await api("/api/v1/auth/logout", { method: "POST" });
+    clearSessionToken();
     qc.setQueryData(["me"], null);
     qc.clear();
   };

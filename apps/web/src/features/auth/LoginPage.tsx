@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, clearSessionToken, setSessionToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,19 +20,32 @@ export default function LoginPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    clearSessionToken();
     try {
-      await api<Me>("/api/v1/auth/login", { method: "POST", json: { username, password } });
-      // Round-trip the session cookie before entering the app: if the browser
-      // didn't store/send it, fail HERE with a precise message instead of
-      // stranding the user in an app where every request is 401.
-      const me = await api<Me>("/api/v1/auth/me");
+      const login = await api<Me & { token: string }>("/api/v1/auth/login", {
+        method: "POST",
+        json: { username, password },
+      });
+      // Round-trip the session before entering the app. Preferred: the
+      // httpOnly cookie. If the browser blocked it (privacy settings or
+      // extensions — seen on plain-HTTP LAN-IP origins), fall back to the
+      // bearer token transparently.
+      let me: Me;
+      try {
+        me = await api<Me>("/api/v1/auth/me");
+      } catch (err) {
+        if (!(err instanceof ApiError && err.status === 401)) throw err;
+        setSessionToken(login.token);
+        me = await api<Me>("/api/v1/auth/me"); // now via Authorization header
+      }
       qc.setQueryData(["me"], me);
       navigate("/");
     } catch (err) {
+      clearSessionToken();
       if (err instanceof ApiError && err.status === 401 && err.message === "unauthorized") {
         setError(
-          `Login succeeded but the browser did not store the session cookie. ` +
-            `Clear site data for ${window.location.host} and retry, or check browser cookie/privacy settings.`,
+          "Login succeeded but no session could be established (cookie blocked and token fallback failed). " +
+            "Check browser privacy settings or extensions.",
         );
       } else {
         setError(err instanceof ApiError ? err.message : "login failed");

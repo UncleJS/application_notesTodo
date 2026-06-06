@@ -3,7 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { users } from "../db/schema/auth";
 import { createSession, destroySession } from "../services/session";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, sessionIdFrom } from "../middleware/auth";
 import { nowUtcSql } from "../lib/time";
 
 export const authRoutes = new Elysia({ prefix: "/api/v1/auth" })
@@ -38,6 +38,9 @@ export const authRoutes = new Elysia({ prefix: "/api/v1/auth" })
         displayName: user.displayName,
         email: user.email,
         isAdmin: user.isAdmin,
+        // same session id as the cookie — used as an Authorization: Bearer
+        // fallback by clients whose browsers block the cookie
+        token: session.id,
       };
     },
     {
@@ -47,8 +50,8 @@ export const authRoutes = new Elysia({ prefix: "/api/v1/auth" })
       }),
     },
   )
-  .post("/logout", async ({ cookie }) => {
-    const sid = cookie.sid?.value as string | undefined;
+  .post("/logout", async ({ cookie, headers }) => {
+    const sid = sessionIdFrom(cookie, headers);
     if (sid) await destroySession(sid);
     cookie.sid?.remove();
     return { ok: true };
