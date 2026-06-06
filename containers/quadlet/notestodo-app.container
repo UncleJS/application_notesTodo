@@ -8,6 +8,7 @@ After=notestodo-mariadb.service
 Image=localhost/notestodo-app:latest
 ContainerName=notestodo-app
 Pod=notestodo-pod.pod
+# Placeholder — scripts/install.sh and rebuild.sh rewrite this to <repo>/.env on copy
 EnvironmentFile=%h/0_opencode/application_notesTodo/.env
 Environment=APP_ENV=production
 

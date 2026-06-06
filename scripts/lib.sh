@@ -75,7 +75,13 @@ ensure_only() { # ensure_only dev|app
 
 sync_quadlets() {
   mkdir -p "${QUADLET_DIR}"
-  cp "${REPO_DIR}"/containers/quadlet/* "${QUADLET_DIR}/"
+  # Rewrite EnvironmentFile= to THIS clone's repo-local .env so the units work
+  # from any checkout path (the committed value is only a placeholder).
+  local f
+  for f in "${REPO_DIR}"/containers/quadlet/*; do
+    sed "s|^EnvironmentFile=.*|EnvironmentFile=${REPO_DIR}/.env|" "$f" \
+      > "${QUADLET_DIR}/$(basename "$f")"
+  done
   systemctl --user daemon-reload
 }
 

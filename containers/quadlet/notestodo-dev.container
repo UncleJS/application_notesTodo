@@ -7,6 +7,7 @@ Image=localhost/notestodo-dev:latest
 ContainerName=notestodo-dev
 Pod=notestodo-pod.pod
 Volume=notestodo-dev.volume:/workspace:Z
+# Placeholder — scripts/install.sh and rebuild.sh rewrite this to <repo>/.env on copy
 EnvironmentFile=%h/0_opencode/application_notesTodo/.env
 
 [Service]
