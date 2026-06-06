@@ -25,28 +25,50 @@ React + Vite + Tailwind (high-contrast dark) frontend, OpenAPI spec-first.
 - [Production](#production)
 - [Settings](#settings)
 - [Migrations](#migrations)
+- [Testing](#testing)
 - [Conventions](#conventions)
 - [License](#license)
 
 ## Features
 
-- **Notes** — markdown body, pinning, full-text search over title + body.
-- **Todos** — due dates, done toggling, duplicate-with-edit, save-as-template.
+- **Notes** — markdown body, pinning (inline pin toggle on cards), full-text
+  search over title + body.
+- **Todos** — due dates, done toggling, inline rename (double-click a title),
+  duplicate-with-edit, save-as-template, **bulk operations** (select several →
+  mark done / archive / add tag in one call with a per-item skip report).
 - **Calendar** — month/week/list views, RFC 5545 recurrence (RRULE) with
-  per-occurrence skip (EXDATE), all-day events, duplicate-with-edit.
+  per-occurrence skip (EXDATE), all-day events, duplicate-with-edit. Invalid
+  rules are rejected at save time (422); legacy broken rules surface as a
+  clickable warning banner instead of silently disappearing.
+- **Command palette** — `⌘K`/`Ctrl+K` searches notes, todos and events from
+  anywhere and offers navigation + "New …" commands; press `n` on any list
+  page for a new item.
 - **Templates** — one template holds any mix of notes, todos and events.
   Instantiation picks a base date; due/start dates are relative offsets
   (events also carry time-of-day + duration). Template-level tags are added to
   every created item; template-level category/priority *override* item-level.
   All items created together are linked to each other (`linkType: "template"`).
 - **Linking** — any item can link to any other; items with links show a 🔗 icon
-  in every list view.
+  in every list view. Edit dialogs embed **link chips** with lazy hover
+  previews and an inline link-by-search field ("Create & add details" on the
+  create dialogs saves first, then keeps the dialog open for tags/links).
 - **Tags / categories / priorities** — shared lookups, filterable on every
   list page, editable under Settings.
 - **Sharing** — per-item grants to users or groups at view/edit level.
 - **Reminders** — email (SMTP) and signed webhook delivery with retry.
 - **Archive-only** — nothing is hard-deleted; "Show archived" reveals
-  archived rows everywhere.
+  archived rows everywhere. Every archive action shows an **Undo** toast.
+  Archiving a user cascades: their items are archived, their reminders
+  disabled and their sessions revoked (restoring the user does *not*
+  auto-restore items).
+- **Responsive UX** — optimistic updates with rollback, skeleton loading,
+  retry buttons on failed queries, per-type smart defaults (last-used
+  category/priority), filters collapse into a popover on small screens, and
+  the calendar opens in list view on phones.
+- **Hardening** — login rate limiting (10 failures per username per 15 min →
+  429), optimistic locking on edits (`expectedUpdatedAtUTC` → 409 when someone
+  else saved first), structured JSON-line logging, strict id/lookup/grantee
+  validation with friendly errors.
 
 [↑ back to TOC](#table-of-contents)
 
@@ -179,6 +201,30 @@ columns implement uniqueness-among-active — keep them when altering tables.
 
 [↑ back to TOC](#table-of-contents)
 
+## Testing
+
+```sh
+podman exec notestodo-dev bun test            # full suite
+podman exec notestodo-dev bun run typecheck   # server + web
+```
+
+- Tests run against a **dedicated database** `notestodo_test` on the pod's
+  MariaDB — provisioned automatically on first run (created via
+  `MARIADB_ROOT_PASSWORD`, migrations applied, app user granted). The dev
+  database is never touched.
+- `bunfig.toml` preloads `apps/server/src/test/preload.ts`, which points
+  `DB_NAME` at the test DB *before* the connection pool is created.
+- Route tests call the Elysia app in-process (`app.handle(new Request(…))`) —
+  no port, no network. Helpers in `apps/server/src/test/setup.ts` provide
+  `truncateAll()`, `seedBaseFixtures()` (admin/alice/bob + group + lookups)
+  and `makeSession()` (returns a Bearer-usable sid).
+- Coverage: auth flow + rate limiting, item access matrix (owner/edit/view/
+  group/admin), id + lookup + grantee + RRULE validation, optimistic locking,
+  bulk operations, user-archive cascade, reminder worker (dedup, retry,
+  archived skips), recurrence expansion (DST, EXDATE, COUNT).
+
+[↑ back to TOC](#table-of-contents)
+
 ## Conventions
 
 - **Timestamps**: stored UTC, column names end `_UTC`; API transport is
@@ -189,6 +235,13 @@ columns implement uniqueness-among-active — keep them when altering tables.
   muted/zinc/gray/slate utilities).
 - **Archived items**: hidden by default on every page; a "Show archived"
   checkbox reveals them.
+- **Optimistic locking**: PATCH bodies on notes/todos/calendar accept an
+  optional `expectedUpdatedAtUTC`; the server answers `409` when the item
+  changed since that timestamp (omit the field for last-write-wins).
+- **Logging**: one JSON object per line (`{ts, level, event, …context}`) —
+  grep/jq-friendly in `podman logs` / journald.
+- **Frontend chunks**: pages are code-split (`React.lazy`); heavy deps like
+  `rrule` load only with the calendar chunk.
 - **Env files**: repo-local only — `.env.example` (committed placeholders)
   and `.env` (gitignored).
 
