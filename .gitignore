@@ -11,14 +11,18 @@ coverage/
 !.env.example
 
 # Any config carrying credentials or key material
+# (data-file patterns only — must never match source like src/lib/secrets.ts)
 *.pem
 *.key
 *.crt
 *.p12
 *.pfx
-credentials*
 *credentials.json
-secrets*
+credentials.yaml
+credentials.yml
+secrets.json
+secrets.yaml
+secrets.yml
 *.secret
 
 # Local tooling state
