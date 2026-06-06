@@ -68,6 +68,7 @@ paths:
       responses:
         "200": { description: Logged in, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: "Too many failed attempts for this username — retry after the window resets", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /api/v1/auth/logout:
     post:
       tags: [auth]
@@ -415,6 +416,7 @@ paths:
       responses:
         "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Note" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Unprocessable" }
     delete:
       tags: [notes]
@@ -471,6 +473,7 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/TodoBody" }
       responses:
         "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Todo" } } } }
+        "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Unprocessable" }
     delete:
       tags: [todos]
@@ -540,7 +543,26 @@ paths:
         - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
         - { name: to, in: query, required: true, schema: { type: string, format: date-time }, description: "Max 400 days after `from`" }
       responses:
-        "200": { description: Occurrences, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Occurrence" } } } } }
+        "200":
+          description: Occurrences plus warnings for stored rules that failed to expand
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [occurrences, warnings]
+                properties:
+                  occurrences:
+                    type: array
+                    items: { $ref: "#/components/schemas/Occurrence" }
+                  warnings:
+                    type: array
+                    items:
+                      type: object
+                      required: [itemId, title, message]
+                      properties:
+                        itemId: { type: integer }
+                        title: { type: string }
+                        message: { type: string }
         "422": { $ref: "#/components/responses/Unprocessable" }
   /api/v1/calendar/items:
     get:
@@ -578,6 +600,7 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/CalendarBody" }
       responses:
         "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarItem" } } } }
+        "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/Unprocessable" }
     delete:
       tags: [calendar]
@@ -1114,6 +1137,7 @@ components:
               pinned: { type: boolean }
               categoryId: { type: [integer, "null"] }
               priorityId: { type: [integer, "null"] }
+              expectedUpdatedAtUTC: { type: string, format: date-time, description: "Optimistic locking (PATCH only): 409 when the item changed since this timestamp" }
     TodoBody:
       required: true
       content:
@@ -1127,6 +1151,8 @@ components:
               notesMd: { type: [string, "null"] }
               categoryId: { type: [integer, "null"] }
               priorityId: { type: [integer, "null"] }
+              statusId: { type: [integer, "null"] }
+              expectedUpdatedAtUTC: { type: string, format: date-time, description: "Optimistic locking (PATCH only): 409 when the item changed since this timestamp" }
     CalendarBody:
       required: true
       content:
@@ -1145,6 +1171,7 @@ components:
               exdatesUTC: { type: array, items: { type: string, format: date-time } }
               categoryId: { type: [integer, "null"] }
               priorityId: { type: [integer, "null"] }
+              expectedUpdatedAtUTC: { type: string, format: date-time, description: "Optimistic locking (PATCH only): 409 when the item changed since this timestamp" }
     TemplateItemBody:
       required: true
       content:

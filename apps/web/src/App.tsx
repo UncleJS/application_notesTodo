@@ -1,17 +1,24 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import LoginPage from "@/features/auth/LoginPage";
 import RequireAuth from "@/features/auth/RequireAuth";
 import { CreateActionProvider } from "@/features/command/CreateActionContext";
 import Layout from "@/components/Layout";
-import AdminPage from "@/pages/AdminPage";
-import NotesPage from "@/pages/NotesPage";
-import NoteEditorPage from "@/pages/NoteEditorPage";
-import TodosPage from "@/pages/TodosPage";
-import CalendarPage from "@/pages/CalendarPage";
-import SettingsPage from "@/pages/SettingsPage";
-import ItemDetailPage from "@/pages/ItemDetailPage";
-import TemplatesPage from "@/pages/TemplatesPage";
-import DashboardPage from "@/pages/DashboardPage";
+import { SkeletonList } from "@/components/Skeleton";
+
+// Pages are code-split — each becomes its own chunk so the initial bundle
+// stays small (rrule + calendar code only load when needed).
+const AdminPage = lazy(() => import("@/pages/AdminPage"));
+const NotesPage = lazy(() => import("@/pages/NotesPage"));
+const NoteEditorPage = lazy(() => import("@/pages/NoteEditorPage"));
+const TodosPage = lazy(() => import("@/pages/TodosPage"));
+const CalendarPage = lazy(() => import("@/pages/CalendarPage"));
+const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
+const ItemDetailPage = lazy(() => import("@/pages/ItemDetailPage"));
+const TemplatesPage = lazy(() => import("@/pages/TemplatesPage"));
+const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
+
+const page = (el: React.ReactNode) => <Suspense fallback={<SkeletonList rows={4} />}>{el}</Suspense>;
 
 export default function App() {
   return (
@@ -27,15 +34,15 @@ export default function App() {
             </RequireAuth>
           }
         >
-          <Route index element={<DashboardPage />} />
-          <Route path="/notes" element={<NotesPage />} />
-          <Route path="/notes/:id" element={<NoteEditorPage />} />
-          <Route path="/todos" element={<TodosPage />} />
-          <Route path="/calendar" element={<CalendarPage />} />
-          <Route path="/items/:id" element={<ItemDetailPage />} />
-          <Route path="/templates" element={<TemplatesPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/admin" element={<AdminPage />} />
+          <Route index element={page(<DashboardPage />)} />
+          <Route path="/notes" element={page(<NotesPage />)} />
+          <Route path="/notes/:id" element={page(<NoteEditorPage />)} />
+          <Route path="/todos" element={page(<TodosPage />)} />
+          <Route path="/calendar" element={page(<CalendarPage />)} />
+          <Route path="/items/:id" element={page(<ItemDetailPage />)} />
+          <Route path="/templates" element={page(<TemplatesPage />)} />
+          <Route path="/settings" element={page(<SettingsPage />)} />
+          <Route path="/admin" element={page(<AdminPage />)} />
         </Route>
       </Routes>
     </BrowserRouter>

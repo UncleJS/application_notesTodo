@@ -1,4 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { eq, sql } from "drizzle-orm";
+import { db } from "../db/client";
+import { calendarItems } from "../db/schema/items";
 import { ensureTestDb, truncateAll, seedBaseFixtures, makeSession, type Fixtures } from "./setup";
 import { call, makeApp, type TestApp } from "./helpers";
 
@@ -101,7 +104,8 @@ describe("calendar rrule validation", () => {
       { token },
     );
     expect(list.status).toBe(200);
-    expect(list.body.filter((o: { itemId: number }) => o.itemId === res.body.id)).toHaveLength(5);
+    expect(list.body.warnings).toEqual([]);
+    expect(list.body.occurrences.filter((o: { itemId: number }) => o.itemId === res.body.id)).toHaveLength(5);
   });
 
   it("patch to invalid rrule → 422", async () => {
@@ -114,5 +118,62 @@ describe("calendar rrule validation", () => {
       json: { rrule: "garbage" },
     });
     expect(res.status).toBe(422);
+  });
+
+  it("stored broken rrule surfaces as a warning, not a silent skip", async () => {
+    const created = await call(app, "POST", "/api/v1/calendar/items", {
+      token,
+      json: { title: "legacy", startAtUTC: start },
+    });
+    // sneak a corrupt rule past write validation, as a legacy row would be
+    await db
+      .update(calendarItems)
+      .set({ rrule: "FREQ=WEEKLY;BYDAY=XX" })
+      .where(eq(calendarItems.itemId, created.body.id));
+    const list = await call(
+      app,
+      "GET",
+      "/api/v1/calendar?from=2026-06-01T00:00:00Z&to=2026-06-08T00:00:00Z",
+      { token },
+    );
+    expect(list.status).toBe(200);
+    expect(list.body.warnings).toHaveLength(1);
+    expect(list.body.warnings[0].itemId).toBe(created.body.id);
+    expect(list.body.warnings[0].title).toBe("legacy");
+    expect(list.body.occurrences.filter((o: { itemId: number }) => o.itemId === created.body.id)).toHaveLength(0);
+  });
+});
+
+describe("optimistic locking", () => {
+  it("PATCH with stale expectedUpdatedAtUTC → 409; current timestamp → 200", async () => {
+    const created = await call(app, "POST", "/api/v1/todos", { token, json: { title: "lockme" } });
+    const id = created.body.id;
+    const seen = created.body.updatedAtUTC;
+    // someone else saves in between (bump the stored timestamp)
+    await db.execute(
+      sql`UPDATE items SET updated_at_UTC = DATE_ADD(updated_at_UTC, INTERVAL 10 SECOND) WHERE id = ${id}`,
+    );
+    const stale = await call(app, "PATCH", `/api/v1/todos/${id}`, {
+      token,
+      json: { title: "mine", expectedUpdatedAtUTC: seen },
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.body.error).toContain("modified by someone else");
+    const fresh = await call(app, "GET", `/api/v1/todos/${id}`, { token });
+    const ok = await call(app, "PATCH", `/api/v1/todos/${id}`, {
+      token,
+      json: { title: "mine", expectedUpdatedAtUTC: fresh.body.updatedAtUTC },
+    });
+    expect(ok.status).toBe(200);
+    expect(ok.body.title).toBe("mine");
+  });
+
+  it("PATCH without expectedUpdatedAtUTC keeps last-write-wins", async () => {
+    const created = await call(app, "POST", "/api/v1/notes", { token, json: { title: "n" } });
+    const res = await call(app, "PATCH", `/api/v1/notes/${created.body.id}`, {
+      token,
+      json: { title: "updated" },
+    });
+    expect(res.status).toBe(200);
   });
 });

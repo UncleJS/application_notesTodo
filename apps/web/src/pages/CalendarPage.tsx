@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckSquare, ChevronLeft, ChevronRight, Link2, Repeat, Square } from "lucide-react";
@@ -41,7 +41,14 @@ export interface CalendarItem {
   ownerId: number;
   categoryId: number | null;
   priorityId: number | null;
+  updatedAtUTC: string;
   archivedAtUTC: string | null;
+}
+
+interface CalendarWarning {
+  itemId: number;
+  title: string;
+  message: string;
 }
 
 interface Occurrence {
@@ -73,6 +80,8 @@ interface CalForm {
   exdatesUTC: string[];
   categoryId: number | null;
   priorityId: number | null;
+  /** snapshot for optimistic locking — sent as expectedUpdatedAtUTC on save */
+  updatedAtUTC?: string;
   archivedAtUTC?: string | null;
   /** set when opened from a recurring occurrence — enables "skip this occurrence" */
   occurrenceStartUTC?: string;
@@ -172,20 +181,22 @@ export default function CalendarPage() {
       if (filters.priority) params.set("priority", filters.priority);
       if (filters.tag) params.set("tag", filters.tag);
       if (filters.kind) params.set("kind", filters.kind);
-      return api<Occurrence[]>(`/api/v1/calendar?${params}`);
+      return api<{ occurrences: Occurrence[]; warnings: CalendarWarning[] }>(`/api/v1/calendar?${params}`);
     },
   });
+  const occList = occurrences.data?.occurrences;
+  const warnings = occurrences.data?.warnings ?? [];
 
   const byDay = useMemo(() => {
     const map = new Map<string, Occurrence[]>();
-    for (const o of occurrences.data ?? []) {
+    for (const o of occList ?? []) {
       const key = localDayKey(o.occurrenceStartUTC);
       const list = map.get(key) ?? [];
       list.push(o);
       map.set(key, list);
     }
     return map;
-  }, [occurrences.data]);
+  }, [occList]);
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: ["calendar"], exact: false });
 
@@ -200,6 +211,7 @@ export default function CalendarPage() {
         categoryId: todo.categoryId,
         priorityId: todo.priorityId,
         statusId: todo.statusId,
+        updatedAtUTC: todo.updatedAtUTC,
         archivedAtUTC: todo.archivedAtUTC,
         tagIds: todo.tagIds,
       });
@@ -219,11 +231,14 @@ export default function CalendarPage() {
       exdatesUTC: item.exdatesUTC,
       categoryId: item.categoryId,
       priorityId: item.priorityId,
+      updatedAtUTC: item.updatedAtUTC,
       archivedAtUTC: item.archivedAtUTC,
       occurrenceStartUTC: o.recurring ? o.occurrenceStartUTC : undefined,
     });
   }
 
+  // "Create & add details" keeps the dialog open on the freshly created event
+  const continueAfterCreate = useRef(false);
   const save = useMutation({
     mutationFn: (f: CalForm) => {
       const json = {
@@ -238,15 +253,21 @@ export default function CalendarPage() {
         exdatesUTC: f.exdatesUTC,
         categoryId: f.categoryId,
         priorityId: f.priorityId,
+        ...(f.id && f.updatedAtUTC ? { expectedUpdatedAtUTC: f.updatedAtUTC } : {}),
       };
       return f.id
         ? api<CalendarItem>(`/api/v1/calendar/items/${f.id}`, { method: "PATCH", json })
         : api<CalendarItem>("/api/v1/calendar/items", { method: "POST", json });
     },
-    onSuccess: (_data, f) => {
+    onSuccess: (data, f) => {
       invalidate();
       rememberDefaults("calendar", { categoryId: f.categoryId, priorityId: f.priorityId });
       toast({ title: f.id ? "Event saved" : "Event created" });
+      if (!f.id && continueAfterCreate.current) {
+        continueAfterCreate.current = false;
+        setForm({ ...f, id: data.id, updatedAtUTC: data.updatedAtUTC, archivedAtUTC: null });
+        return;
+      }
       setForm(null);
     },
   });
@@ -459,9 +480,23 @@ export default function CalendarPage() {
       )}
       {view === "month" && <div className="grid grid-cols-7">{monthDays.map((d) => dayCell(d, true))}</div>}
       {view === "week" && <div className="grid grid-cols-7">{weekDays.map((d) => dayCell(d, false))}</div>}
+      {warnings.length > 0 && (
+        <div className="flex flex-col gap-1 rounded-md border border-destructive p-2">
+          {warnings.map((w) => (
+            <button
+              key={w.itemId}
+              type="button"
+              className="text-left text-xs text-destructive hover:underline"
+              onClick={() => void openOccurrence({ itemId: w.itemId, kind: "event", recurring: false } as Occurrence)}
+            >
+              ⚠ {w.title}: {w.message}
+            </button>
+          ))}
+        </div>
+      )}
       {view === "list" && (
         <ul className="flex flex-col">
-          {occurrences.data?.map((o, i) => (
+          {occList?.map((o, i) => (
             <li
               key={`${o.itemId}-${o.occurrenceStartUTC}-${i}`}
               className="flex items-center gap-3 border-b border-border/50 px-1 py-2 hover:bg-accent/40"
@@ -497,7 +532,7 @@ export default function CalendarPage() {
             </li>
           ))}
           {occurrences.isLoading && <SkeletonList />}
-          {occurrences.data?.length === 0 && <p className="py-4 text-sm text-foreground">No events in range.</p>}
+          {occList?.length === 0 && <p className="py-4 text-sm text-foreground">No events in range.</p>}
         </ul>
       )}
       {occurrences.isError && <QueryError error={occurrences.error} onRetry={() => void occurrences.refetch()} />}
@@ -614,6 +649,20 @@ export default function CalendarPage() {
                 <Button type="submit" disabled={!form.title || !form.startAtUTC || save.isPending}>
                   {form.id ? "Save" : "Create"}
                 </Button>
+                {!form.id && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!form.title || !form.startAtUTC || save.isPending}
+                    title="Create the event and keep editing to add tags and links"
+                    onClick={() => {
+                      continueAfterCreate.current = true;
+                      save.mutate(form);
+                    }}
+                  >
+                    Create &amp; add details
+                  </Button>
+                )}
                 {form.id && (
                   <Button
                     type="button"

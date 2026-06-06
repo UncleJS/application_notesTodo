@@ -5,11 +5,18 @@ import { users } from "../db/schema/auth";
 import { createSession, destroySession } from "../services/session";
 import { requireAuth, sessionIdFrom } from "../middleware/auth";
 import { nowUtcSql } from "../lib/time";
+import { isRateLimited, recordFailure, recordSuccess } from "../lib/rateLimit";
+import { logWarn } from "../lib/log";
 
 export const authRoutes = new Elysia({ prefix: "/api/v1/auth" })
   .post(
     "/login",
     async ({ body, cookie, set }) => {
+      if (isRateLimited(body.username)) {
+        logWarn("login.rate_limited", { username: body.username });
+        set.status = 429;
+        return { error: "too many failed attempts — try again later" };
+      }
       const rows = await db
         .select()
         .from(users)
@@ -17,9 +24,12 @@ export const authRoutes = new Elysia({ prefix: "/api/v1/auth" })
         .limit(1);
       const user = rows[0];
       if (!user || !(await Bun.password.verify(body.password, user.passwordHash))) {
+        recordFailure(body.username);
+        logWarn("login.failed", { username: body.username });
         set.status = 401;
         return { error: "invalid credentials" };
       }
+      recordSuccess(body.username);
       await db
         .update(users)
         .set({ lastLoginAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })

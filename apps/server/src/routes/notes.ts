@@ -5,7 +5,7 @@ import { db } from "../db/client";
 import { items, notes } from "../db/schema/items";
 import { itemTags } from "../db/schema/linksTags";
 import { requireAuth } from "../middleware/auth";
-import { atLeast, getItemAccess, visibleItemsCond } from "../services/itemAccess";
+import { atLeast, getItemAccess, isStaleItem, visibleItemsCond } from "../services/itemAccess";
 import { tagIdsByItem } from "../services/tags";
 import { invalidLookupIds } from "../services/lookups";
 import { itemIdsWithLinks } from "../services/links";
@@ -146,6 +146,10 @@ export const noteRoutes = new Elysia({ prefix: "/api/v1/notes" })
         set.status = access === null ? 404 : 403;
         return { error: access === null ? "not found" : "forbidden" };
       }
+      if (body.expectedUpdatedAtUTC && (await isStaleItem(id, body.expectedUpdatedAtUTC))) {
+        set.status = 409;
+        return { error: "modified by someone else — reload to get the latest version" };
+      }
       const badLookups = await invalidLookupIds(body);
       if (badLookups.length) {
         set.status = 422;
@@ -181,6 +185,8 @@ export const noteRoutes = new Elysia({ prefix: "/api/v1/notes" })
         pinned: t.Optional(t.Boolean()),
         categoryId: t.Optional(t.Nullable(t.Number())),
         priorityId: t.Optional(t.Nullable(t.Number())),
+        // optimistic locking: reject with 409 when the item changed since this timestamp
+        expectedUpdatedAtUTC: t.Optional(t.String({ format: "date-time" })),
       }),
     },
   )

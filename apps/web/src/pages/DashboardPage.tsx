@@ -26,10 +26,12 @@ export default function DashboardPage() {
   const weekAhead = new Date(now.getTime() + 7 * 86400_000);
   const events = useQuery({
     queryKey: ["calendar", "dashboard"],
-    queryFn: () =>
-      api<Occurrence[]>(
+    queryFn: async () => {
+      const res = await api<{ occurrences: Occurrence[] }>(
         `/api/v1/calendar?kind=event&from=${encodeURIComponent(now.toISOString())}&to=${encodeURIComponent(weekAhead.toISOString())}`,
-      ),
+      );
+      return res.occurrences;
+    },
   });
   const notes = useQuery({
     queryKey: ["notes", "dashboard"],

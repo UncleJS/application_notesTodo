@@ -1332,6 +1332,11 @@ export interface components {
                     pinned?: boolean;
                     categoryId?: number | null;
                     priorityId?: number | null;
+                    /**
+                     * Format: date-time
+                     * @description Optimistic locking (PATCH only): 409 when the item changed since this timestamp
+                     */
+                    expectedUpdatedAtUTC?: string;
                 };
             };
         };
@@ -1345,6 +1350,12 @@ export interface components {
                     notesMd?: string | null;
                     categoryId?: number | null;
                     priorityId?: number | null;
+                    statusId?: number | null;
+                    /**
+                     * Format: date-time
+                     * @description Optimistic locking (PATCH only): 409 when the item changed since this timestamp
+                     */
+                    expectedUpdatedAtUTC?: string;
                 };
             };
         };
@@ -1366,6 +1377,11 @@ export interface components {
                     exdatesUTC?: string[];
                     categoryId?: number | null;
                     priorityId?: number | null;
+                    /**
+                     * Format: date-time
+                     * @description Optimistic locking (PATCH only): 409 when the item changed since this timestamp
+                     */
+                    expectedUpdatedAtUTC?: string;
                 };
             };
         };
@@ -1440,6 +1456,15 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            /** @description Too many failed attempts for this username — retry after the window resets */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     logout: {
@@ -2115,6 +2140,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
         };
     };
@@ -2237,6 +2263,7 @@ export interface operations {
                     "application/json": components["schemas"]["Todo"];
                 };
             };
+            409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
         };
     };
@@ -2326,13 +2353,20 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Occurrences */
+            /** @description Occurrences plus warnings for stored rules that failed to expand */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Occurrence"][];
+                    "application/json": {
+                        occurrences: components["schemas"]["Occurrence"][];
+                        warnings: {
+                            itemId: number;
+                            title: string;
+                            message: string;
+                        }[];
+                    };
                 };
             };
             422: components["responses"]["Unprocessable"];
@@ -2440,6 +2474,7 @@ export interface operations {
                     "application/json": components["schemas"]["CalendarItem"];
                 };
             };
+            409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
         };
     };

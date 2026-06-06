@@ -3,6 +3,7 @@ import { db } from "../db/client";
 import { items } from "../db/schema/items";
 import { itemShares } from "../db/schema/shares";
 import { groupMembers } from "../db/schema/auth";
+import { isoToSql } from "../lib/time";
 import type { SessionUser } from "./session";
 
 export type AccessLevel = "owner" | "edit" | "view";
@@ -69,4 +70,15 @@ function sharedItemIdsSubquery(userId: number) {
 /** WHERE condition for list endpoints: items the user owns or that are shared with them. */
 export function visibleItemsCond(user: SessionUser): SQL {
   return or(eq(items.ownerId, user.id), inArray(items.id, sharedItemIdsSubquery(user.id)))!;
+}
+
+/**
+ * Optimistic-locking check: true when the item's updated_at_UTC no longer
+ * matches what the client last saw (someone else saved in between).
+ */
+export async function isStaleItem(itemId: number, expectedUpdatedAtUTC: string): Promise<boolean> {
+  const row = (
+    await db.select({ u: items.updatedAtUTC }).from(items).where(eq(items.id, itemId)).limit(1)
+  )[0];
+  return !!row && row.u !== isoToSql(expectedUpdatedAtUTC);
 }

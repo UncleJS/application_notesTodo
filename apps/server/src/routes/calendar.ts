@@ -7,8 +7,9 @@ import { itemTags } from "../db/schema/linksTags";
 import { tagIdsByItem } from "../services/tags";
 import { itemIdsWithLinks } from "../services/links";
 import { requireAuth } from "../middleware/auth";
-import { atLeast, getItemAccess, visibleItemsCond } from "../services/itemAccess";
+import { atLeast, getItemAccess, isStaleItem, visibleItemsCond } from "../services/itemAccess";
 import { isoToSql, nowUtcSql, sqlToDate, sqlToIso } from "../lib/time";
+import { logWarn } from "../lib/log";
 import { expandOccurrences, rruleError } from "../services/recurrence";
 import { invalidLookupIds } from "../services/lookups";
 
@@ -141,6 +142,8 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
         ...rows.map((r) => r.items.id),
         ...todoRows.map((r) => r.items.id),
       ]);
+      // legacy/corrupt stored rules can't expand — reported, not silently dropped
+      const warnings: Array<{ itemId: number; title: string; message: string }> = [];
       const occurrences: Array<{
         itemId: number;
         kind: "event" | "todo";
@@ -217,11 +220,16 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
             });
           }
         } catch (err) {
-          console.error(`bad rrule on item ${r.items.id}:`, err);
+          logWarn("calendar.bad_rrule", { itemId: r.items.id, error: err instanceof Error ? err.message : String(err) });
+          warnings.push({
+            itemId: r.items.id,
+            title: r.items.title,
+            message: "broken recurrence rule — occurrences not shown; edit the event to fix it",
+          });
         }
       }
       occurrences.sort((a, b) => a.occurrenceStartUTC.localeCompare(b.occurrenceStartUTC));
-      return occurrences;
+      return { occurrences, warnings };
     },
     {
       query: t.Object({
@@ -343,6 +351,10 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
         set.status = access === null ? 404 : 403;
         return { error: access === null ? "not found" : "forbidden" };
       }
+      if (body.expectedUpdatedAtUTC && (await isStaleItem(id, body.expectedUpdatedAtUTC))) {
+        set.status = 409;
+        return { error: "modified by someone else — reload to get the latest version" };
+      }
       if (body.rrule) {
         // validate against the effective start/timezone (body value or stored value)
         const existing = await loadCalendarItem(id);
@@ -410,6 +422,8 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
         exdatesUTC: t.Optional(t.Array(t.String({ format: "date-time" }))),
         categoryId: t.Optional(t.Nullable(t.Number())),
         priorityId: t.Optional(t.Nullable(t.Number())),
+        // optimistic locking: reject with 409 when the item changed since this timestamp
+        expectedUpdatedAtUTC: t.Optional(t.String({ format: "date-time" })),
       }),
     },
   )

@@ -1,11 +1,14 @@
 import { Elysia, t } from "elysia";
 import { idParam } from "../lib/params";
-import { eq, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { sessions, users } from "../db/schema/auth";
+import { items } from "../db/schema/items";
+import { reminders } from "../db/schema/reminders";
 import { requireAdmin } from "../middleware/auth";
 import { nowUtcSql, sqlToIso } from "../lib/time";
 import { isDupEntry } from "../lib/dbErrors";
+import { logInfo } from "../lib/log";
 
 function userDto(u: typeof users.$inferSelect) {
   return {
@@ -112,8 +115,22 @@ export const adminUserRoutes = new Elysia({ prefix: "/api/v1/admin/users" })
       set.status = 400;
       return { error: "cannot archive yourself" };
     }
-    await db.update(users).set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() }).where(eq(users.id, id));
-    await db.delete(sessions).where(eq(sessions.userId, id));
+    // Cascade: archive the user's active items and disable their reminders so
+    // shared copies disappear and nothing keeps dispatching. Restoring the
+    // user does NOT auto-restore items — admins restore those individually.
+    await db.transaction(async (tx) => {
+      await tx.update(users).set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() }).where(eq(users.id, id));
+      await tx
+        .update(items)
+        .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
+        .where(and(eq(items.ownerId, id), isNull(items.archivedAtUTC)));
+      await tx
+        .update(reminders)
+        .set({ enabled: false, updatedAtUTC: nowUtcSql() })
+        .where(and(eq(reminders.createdBy, id), eq(reminders.enabled, true)));
+      await tx.delete(sessions).where(eq(sessions.userId, id));
+    });
+    logInfo("admin.user_archived", { userId: id, by: user!.id });
     return { ok: true };
   })
   .post("/:id/restore", async ({ params, set }) => {

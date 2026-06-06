@@ -4,6 +4,7 @@ import { reminderDispatch, reminders } from "../db/schema/reminders";
 import { calendarExdates, calendarItems, items } from "../db/schema/items";
 import { users } from "../db/schema/auth";
 import { isDupEntry } from "../lib/dbErrors";
+import { logError, logInfo, logWarn } from "../lib/log";
 import { dateToSql, nowUtcSql, sqlToDate } from "../lib/time";
 import { nextOccurrence } from "../services/recurrence";
 import { sendReminderEmail, sendReminderWebhook, type ReminderPayload } from "../services/dispatch";
@@ -37,7 +38,7 @@ export async function tick(): Promise<void> {
       try {
         await processReminder(r);
       } catch (err) {
-        console.error(`reminder ${r.id} processing failed:`, err);
+        logError("reminder.process_failed", { reminderId: r.id, itemId: r.itemId, error: err });
       } finally {
         await db
           .update(reminders)
@@ -62,6 +63,7 @@ async function processReminder(r: typeof reminders.$inferSelect): Promise<void> 
   const recipient = (await db.select().from(users).where(eq(users.id, recipientId)))[0];
   if (!recipient || recipient.archivedAtUTC) {
     // recipient gone or archived — disable instead of dispatching into the void
+    logWarn("reminder.recipient_unavailable", { reminderId: r.id, recipientId });
     await db.update(reminders).set({ enabled: false, updatedAtUTC: nowUtcSql() }).where(eq(reminders.id, r.id));
     return;
   }
@@ -177,8 +179,8 @@ async function processReminder(r: typeof reminders.$inferSelect): Promise<void> 
 }
 
 export function startReminderWorker(): void {
-  console.log(`Reminder worker ${workerId} started (tick ${TICK_MS / 1000}s)`);
+  logInfo("reminder.worker_started", { workerId, tickSeconds: TICK_MS / 1000 });
   setInterval(() => {
-    void tick().catch((err) => console.error("reminder tick failed:", err));
+    void tick().catch((err) => logError("reminder.tick_failed", { workerId, error: err }));
   }, TICK_MS);
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Link2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -38,6 +38,7 @@ export interface Todo {
   categoryId: number | null;
   priorityId: number | null;
   statusId: number | null;
+  updatedAtUTC: string;
   archivedAtUTC: string | null;
 }
 
@@ -49,6 +50,8 @@ export interface TodoForm {
   categoryId: number | null;
   priorityId: number | null;
   statusId: number | null;
+  /** snapshot for optimistic locking — sent as expectedUpdatedAtUTC on save */
+  updatedAtUTC?: string;
   archivedAtUTC?: string | null;
   /** carried along for "save as template" — not edited in this dialog */
   tagIds?: number[];
@@ -85,6 +88,8 @@ export function TodoDialog({
     queryFn: () => api<Todo>(`/api/v1/todos/${form!.id}`),
     enabled: !!form?.id,
   });
+  // "Create & add details" keeps the dialog open on the freshly created todo
+  const continueAfterCreate = useRef(false);
   const save = useMutation({
     mutationFn: (f: TodoForm) => {
       const json = {
@@ -94,15 +99,21 @@ export function TodoDialog({
         categoryId: f.categoryId,
         priorityId: f.priorityId,
         statusId: f.statusId,
+        ...(f.id && f.updatedAtUTC ? { expectedUpdatedAtUTC: f.updatedAtUTC } : {}),
       };
       return f.id
         ? api<Todo>(`/api/v1/todos/${f.id}`, { method: "PATCH", json })
         : api<Todo>("/api/v1/todos", { method: "POST", json });
     },
-    onSuccess: (_data, f) => {
+    onSuccess: (data, f) => {
       void qc.invalidateQueries({ queryKey: listKey.slice(0, 1), exact: false });
       rememberDefaults("todo", { categoryId: f.categoryId, priorityId: f.priorityId });
       toast({ title: f.id ? "Todo saved" : "Todo created" });
+      if (!f.id && continueAfterCreate.current) {
+        continueAfterCreate.current = false;
+        setForm({ ...f, id: data.id, updatedAtUTC: data.updatedAtUTC, archivedAtUTC: null, tagIds: [] });
+        return;
+      }
       onClose();
     },
   });
@@ -269,6 +280,20 @@ export function TodoDialog({
             <Button type="submit" disabled={!form.title || save.isPending}>
               {form.id ? "Save" : "Create"}
             </Button>
+            {!form.id && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!form.title || save.isPending}
+                title="Create the todo and keep editing to add tags and links"
+                onClick={() => {
+                  continueAfterCreate.current = true;
+                  save.mutate(form);
+                }}
+              >
+                Create &amp; add details
+              </Button>
+            )}
             {form.id && (
               <Button
                 type="button"
@@ -577,6 +602,7 @@ export default function TodosPage() {
                         categoryId: todo.categoryId,
                         priorityId: todo.priorityId,
                         statusId: todo.statusId,
+                        updatedAtUTC: todo.updatedAtUTC,
                         archivedAtUTC: todo.archivedAtUTC,
                         tagIds: todo.tagIds,
                       })

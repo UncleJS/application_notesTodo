@@ -45,11 +45,14 @@ export default function NoteEditorPage() {
     onMutate: async (json) => {
       await qc.cancelQueries({ queryKey: noteKey });
       const prev = qc.getQueryData<Note>(noteKey);
-      if (prev) qc.setQueryData(noteKey, { ...prev, ...json });
+      const { expectedUpdatedAtUTC: _lockOnly, ...fields } = json;
+      if (prev) qc.setQueryData(noteKey, { ...prev, ...fields });
       return { prev };
     },
-    onError: (_err, _json, ctx) => {
+    onError: (err, _json, ctx) => {
       if (ctx?.prev) qc.setQueryData(noteKey, ctx.prev);
+      toast({ title: "Save failed", description: (err as Error).message, variant: "destructive" });
+      if ((err as { status?: number }).status === 409) void note.refetch();
     },
     onSuccess: (updated, json) => {
       qc.setQueryData(noteKey, updated);
@@ -116,7 +119,7 @@ export default function NoteEditorPage() {
           <Button
             size="sm"
             disabled={!dirty || patch.isPending}
-            onClick={() => patch.mutate({ title, bodyMd: body })}
+            onClick={() => patch.mutate({ title, bodyMd: body, expectedUpdatedAtUTC: n.updatedAtUTC })}
           >
             {patch.isPending ? "Saving…" : dirty ? "Save" : "Saved"}
           </Button>
