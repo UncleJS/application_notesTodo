@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import { Menu, X } from "lucide-react";
 import { useMe, useLogout } from "@/features/auth/useMe";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,37 +17,69 @@ const navItems = [
 export default function Layout() {
   const me = useMe();
   const logout = useLogout();
+  // Mobile: sidebar is off-canvas and toggled from the top bar; md+ always visible.
+  const [open, setOpen] = useState(false);
+
+  const linkCls = ({ isActive }: { isActive: boolean }) =>
+    cn(
+      "rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-accent",
+      isActive && "bg-secondary font-medium",
+    );
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="flex w-48 shrink-0 flex-col border-r border-border p-3">
-        <div className="mb-4 px-2 text-lg font-bold text-foreground">NotesTodo</div>
+    <div className="flex min-h-screen flex-col md:flex-row">
+      {/* Mobile top bar */}
+      <header className="flex items-center gap-2 border-b border-border p-3 md:hidden">
+        <Button variant="ghost" size="icon" aria-label="Open menu" onClick={() => setOpen(true)}>
+          <Menu className="h-5 w-5" />
+        </Button>
+        <span className="text-lg font-bold text-foreground">NotesTodo</span>
+      </header>
+
+      {/* Backdrop (mobile, menu open) */}
+      {open && (
+        <button
+          type="button"
+          aria-label="Close menu"
+          className="fixed inset-0 z-30 bg-black/60 md:hidden"
+          onClick={() => setOpen(false)}
+        />
+      )}
+
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 flex w-48 shrink-0 flex-col border-r border-border bg-background p-3",
+          "transition-transform duration-200",
+          open ? "translate-x-0" : "-translate-x-full",
+          "md:static md:translate-x-0",
+        )}
+      >
+        <div className="mb-4 flex items-center justify-between px-2">
+          <span className="text-lg font-bold text-foreground">NotesTodo</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Close menu"
+            className="md:hidden"
+            onClick={() => setOpen(false)}
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
         <nav className="flex flex-col gap-0.5">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.to === "/"}
-              className={({ isActive }) =>
-                cn(
-                  "rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-accent",
-                  isActive && "bg-secondary font-medium",
-                )
-              }
+              className={linkCls}
+              onClick={() => setOpen(false)}
             >
               {item.label}
             </NavLink>
           ))}
           {me.data?.isAdmin && (
-            <NavLink
-              to="/admin"
-              className={({ isActive }) =>
-                cn(
-                  "rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-accent",
-                  isActive && "bg-secondary font-medium",
-                )
-              }
-            >
+            <NavLink to="/admin" className={linkCls} onClick={() => setOpen(false)}>
               Admin
             </NavLink>
           )}
@@ -57,7 +91,8 @@ export default function Layout() {
           </Button>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 p-6">
+
+      <main className="min-w-0 flex-1 p-4 md:p-6">
         <Outlet />
       </main>
     </div>
