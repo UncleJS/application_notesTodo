@@ -12,11 +12,13 @@ same host). Every script sources [`lib.sh`](lib.sh) for the shared project
 definitions and helpers.
 
 > **Dev/prod mutual exclusion**: the Quadlet-generated pod service `Wants=`
-> every member container, so any pod start also pulls up `notestodo-app`.
-> Dev and prod both listen on pod port 8080 — if both run, requests alternate
-> between code versions (stale responses!). Every start/restart/rebuild
-> therefore stops the sibling variant afterwards (`ensure_only` in `lib.sh`).
-> Always switch modes via these scripts, not raw `systemctl`.
+> every *installed* member container, and dev + prod both listen on pod port
+> 8080 — if both run, requests alternate between code versions (stale
+> responses!). Therefore the production unit (`notestodo-app.container`) is
+> only installed by `--prod` invocations; dev-mode installs/rebuilds remove
+> it, and every start/restart additionally stops the sibling variant
+> (`ensure_only` in `lib.sh`). Always switch modes via these scripts, not raw
+> `systemctl`.
 
 ## Table of contents
 

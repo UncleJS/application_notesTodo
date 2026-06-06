@@ -21,15 +21,16 @@ for arg in "$@"; do
 done
 
 require_env
-sync_quadlets
 
 if $PROD; then
+  sync_quadlets app
   build_prod_image
   systemctl --user start "${PROJECT_NAME}-mariadb"
   systemctl --user restart "${PROJECT_NAME}-app"
   ensure_only app
   echo "Production container rebuilt and restarted (http://127.0.0.1:8080)."
 else
+  sync_quadlets
   build_dev_image
   $KEEP_VOLUME || refresh_dev_volume
   systemctl --user start "${PROJECT_NAME}-mariadb"

@@ -15,6 +15,10 @@ for arg in "$@"; do
 done
 
 require_env
+if $PROD && [[ ! -f "${QUADLET_DIR}/${PROJECT_NAME}-app.container" ]]; then
+  echo "Production unit not installed — run scripts/rebuild.sh --prod (or install.sh --prod) first."
+  exit 1
+fi
 systemctl --user start "${PROJECT_NAME}-mariadb"
 if $PROD; then
   systemctl --user start "${PROJECT_NAME}-app"

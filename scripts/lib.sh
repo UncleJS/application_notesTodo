@@ -73,15 +73,28 @@ ensure_only() { # ensure_only dev|app
 
 # --- install / update sequencing -------------------------------------------
 
+# sync_quadlets [app]
+# Copies the Quadlet units, rewriting EnvironmentFile= to THIS clone's
+# repo-local .env so the units work from any checkout path (the committed
+# value is only a placeholder).
+# The production unit (notestodo-app.container) is installed ONLY in app mode:
+# the generated pod service Wants= every installed member container, so a
+# dev-mode install with the app unit present would either fail it (image not
+# built) or race the dev server on pod port 8080.
 sync_quadlets() {
+  local mode="${1:-dev}" f base
   mkdir -p "${QUADLET_DIR}"
-  # Rewrite EnvironmentFile= to THIS clone's repo-local .env so the units work
-  # from any checkout path (the committed value is only a placeholder).
-  local f
   for f in "${REPO_DIR}"/containers/quadlet/*; do
+    base="$(basename "$f")"
+    if [[ "$base" == "notestodo-app.container" && "$mode" != "app" ]]; then
+      continue
+    fi
     sed "s|^EnvironmentFile=.*|EnvironmentFile=${REPO_DIR}/.env|" "$f" \
-      > "${QUADLET_DIR}/$(basename "$f")"
+      > "${QUADLET_DIR}/${base}"
   done
+  if [[ "$mode" != "app" ]]; then
+    rm -f "${QUADLET_DIR}/notestodo-app.container"
+  fi
   systemctl --user daemon-reload
 }
 

@@ -19,7 +19,7 @@ for arg in "$@"; do
 done
 
 require_env
-sync_quadlets
+if $PROD; then sync_quadlets app; else sync_quadlets; fi
 build_dev_image
 $PROD && build_prod_image
 
