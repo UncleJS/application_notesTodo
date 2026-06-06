@@ -42,7 +42,7 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-bold text-foreground">Dashboard</h1>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>Todos</CardTitle>
@@ -51,13 +51,19 @@ export default function DashboardPage() {
             {overdue.map((t) => (
               <Link key={t.id} to="/todos" className="flex items-center gap-2 text-sm text-foreground hover:underline">
                 <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                <span className="text-xs font-medium text-destructive">{formatLocal(t.dueAtUTC)}</span>
+                <span className="shrink-0 whitespace-nowrap text-xs font-medium text-destructive">
+                  {formatLocal(t.dueAtUTC)}
+                </span>
               </Link>
             ))}
             {upcoming.map((t) => (
               <Link key={t.id} to="/todos" className="flex items-center gap-2 text-sm text-foreground hover:underline">
                 <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                {t.dueAtUTC && <span className="text-xs text-foreground/70">{formatLocal(t.dueAtUTC)}</span>}
+                {t.dueAtUTC && (
+                  <span className="shrink-0 whitespace-nowrap text-xs text-foreground/70">
+                    {formatLocal(t.dueAtUTC)}
+                  </span>
+                )}
               </Link>
             ))}
             {todos.data?.length === 0 && <p className="text-sm text-foreground">Nothing open. 🎉</p>}
@@ -76,7 +82,9 @@ export default function DashboardPage() {
               >
                 {o.recurring && <Repeat className="h-3 w-3 shrink-0" />}
                 <span className="min-w-0 flex-1 truncate">{o.title}</span>
-                <span className="text-xs text-foreground/70">{formatLocal(o.occurrenceStartUTC)}</span>
+                <span className="shrink-0 whitespace-nowrap text-xs text-foreground/70">
+                  {formatLocal(o.occurrenceStartUTC)}
+                </span>
               </Link>
             ))}
             {events.data?.length === 0 && <p className="text-sm text-foreground">No upcoming events.</p>}
