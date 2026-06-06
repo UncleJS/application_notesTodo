@@ -21,6 +21,7 @@ React + Vite + Tailwind (high-contrast dark) frontend, OpenAPI spec-first.
 - [Architecture](#architecture)
 - [Dev workflow](#dev-workflow)
 - [Scripts](#scripts)
+- [Remote deployment](#remote-deployment)
 - [Production](#production)
 - [Settings](#settings)
 - [Migrations](#migrations)
@@ -111,22 +112,45 @@ every option.
 
 [↑ back to TOC](#table-of-contents)
 
+## Remote deployment
+
+Deploying to another machine (e.g. a LAN server) is the same workflow — the
+pod publishes on `0.0.0.0`, so the app is reachable at the server's address:
+
+```sh
+git clone git@github.com:UncleJS/application_notesTodo.git && cd application_notesTodo
+cp .env.example .env       # fill in THIS host's secrets
+./scripts/install.sh       # dev mode — or ./scripts/install.sh --prod
+./scripts/status.sh        # health report incl. server-side auth self-test
+```
+
+- Access at `http://<server-ip-or-hostname>:5173` (dev) or `:8080` (prod) —
+  wherever the docs say `127.0.0.1`, substitute the server's address.
+- **Update flow**: `git pull && ./scripts/rebuild.sh` (add `--prod` on
+  production hosts). Never copy files by hand — drift between machines was
+  the root cause of every remote incident so far.
+- **Troubleshooting**: run `./scripts/status.sh`. If its auth self-test is OK
+  but the browser still gets 401s, the browser holds a stale session cookie —
+  clear site data for the server's address and log in again (the login page
+  also detects this and says so explicitly).
+- **Scope**: plain HTTP for trusted LANs only. No TLS termination is built
+  in; do not expose these ports beyond the LAN and never via public tunnels.
+  Change `admin`/`admin` immediately after the first login.
+
+[↑ back to TOC](#table-of-contents)
+
 ## Production
 
 ```sh
-./scripts/rebuild.sh --prod   # build production image + restart notestodo-app
-```
-
-or manually:
-
-```sh
-podman build -f containers/Containerfile -t notestodo-app:latest .
-systemctl --user stop notestodo-dev
-systemctl --user start notestodo-app
+./scripts/install.sh --prod   # first time: build, start notestodo-app, migrate
+./scripts/rebuild.sh --prod   # updates: rebuild production image + restart
 ```
 
 Serves SPA + API + reminder scheduler on pod port 8080 with
 `APP_ENV=production` (docs require login; SPA served from `apps/web/dist`).
+Dev and prod are mutually exclusive — only the selected mode's Quadlet unit
+is installed, since both serve the API on pod port 8080. Switch back to dev
+with `./scripts/rebuild.sh`.
 
 [↑ back to TOC](#table-of-contents)
 

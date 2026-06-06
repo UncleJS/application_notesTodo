@@ -43,6 +43,14 @@ PROJECT_QUADLET_FILES=(
   notestodo-pod.pod
 )
 
+# First non-loopback IP of this host for user-facing URLs (falls back to
+# 127.0.0.1). The pod publishes on 0.0.0.0, so this address works from the LAN.
+host_hint() {
+  local ip
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  echo "${ip:-127.0.0.1}"
+}
+
 # --- preflight guards (container-first-dev skill) -------------------------
 
 require_env() {
@@ -77,24 +85,21 @@ ensure_only() { # ensure_only dev|app
 # Copies the Quadlet units, rewriting EnvironmentFile= to THIS clone's
 # repo-local .env so the units work from any checkout path (the committed
 # value is only a placeholder).
-# The production unit (notestodo-app.container) is installed ONLY in app mode:
-# the generated pod service Wants= every installed member container, so a
-# dev-mode install with the app unit present would either fail it (image not
-# built) or race the dev server on pod port 8080.
+# Dev and prod are mutually exclusive: the generated pod service Wants= every
+# INSTALLED member container, and both variants serve the API on pod port
+# 8080 — so only the unit for the selected mode is installed; the sibling's
+# unit file is removed.
 sync_quadlets() {
-  local mode="${1:-dev}" f base
+  local mode="${1:-dev}" f base skip
+  if [[ "$mode" == "app" ]]; then skip="notestodo-dev.container"; else skip="notestodo-app.container"; fi
   mkdir -p "${QUADLET_DIR}"
   for f in "${REPO_DIR}"/containers/quadlet/*; do
     base="$(basename "$f")"
-    if [[ "$base" == "notestodo-app.container" && "$mode" != "app" ]]; then
-      continue
-    fi
+    [[ "$base" == "$skip" ]] && continue
     sed "s|^EnvironmentFile=.*|EnvironmentFile=${REPO_DIR}/.env|" "$f" \
       > "${QUADLET_DIR}/${base}"
   done
-  if [[ "$mode" != "app" ]]; then
-    rm -f "${QUADLET_DIR}/notestodo-app.container"
-  fi
+  rm -f "${QUADLET_DIR}/${skip}"
   systemctl --user daemon-reload
 }
 

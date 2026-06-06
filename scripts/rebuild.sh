@@ -28,7 +28,7 @@ if $PROD; then
   systemctl --user start "${PROJECT_NAME}-mariadb"
   systemctl --user restart "${PROJECT_NAME}-app"
   ensure_only app
-  echo "Production container rebuilt and restarted (http://127.0.0.1:8080)."
+  echo "Production container rebuilt and restarted (http://$(host_hint):8080)."
 else
   sync_quadlets
   build_dev_image

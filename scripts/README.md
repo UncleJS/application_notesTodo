@@ -12,13 +12,13 @@ same host). Every script sources [`lib.sh`](lib.sh) for the shared project
 definitions and helpers.
 
 > **Dev/prod mutual exclusion**: the Quadlet-generated pod service `Wants=`
-> every *installed* member container, and dev + prod both listen on pod port
-> 8080 — if both run, requests alternate between code versions (stale
-> responses!). Therefore the production unit (`notestodo-app.container`) is
-> only installed by `--prod` invocations; dev-mode installs/rebuilds remove
-> it, and every start/restart additionally stops the sibling variant
-> (`ensure_only` in `lib.sh`). Always switch modes via these scripts, not raw
-> `systemctl`.
+> every *installed* member container, and dev + prod both serve the API on
+> pod port 8080 — if both run, requests alternate between code versions
+> (stale responses!). Therefore only the selected mode's unit is installed:
+> `--prod` invocations install `notestodo-app.container` and remove the dev
+> unit; dev-mode invocations do the reverse. Every start/restart additionally
+> stops the sibling variant (`ensure_only` in `lib.sh`). Always switch modes
+> via these scripts, not raw `systemctl`.
 
 ## Table of contents
 
@@ -28,6 +28,7 @@ definitions and helpers.
 - [start.sh](#startsh)
 - [stop.sh](#stopsh)
 - [restart.sh](#restartsh)
+- [status.sh](#statussh)
 - [teardown.sh](#teardownsh)
 - [lib.sh](#libsh)
 - [License](#license)
@@ -46,8 +47,9 @@ definitions and helpers.
 ## install.sh
 
 First-time setup (idempotent — safe to re-run): copies the Quadlet units from
-`containers/quadlet/` to `~/.config/containers/systemd/`, reloads systemd, builds the
-dev image, starts MariaDB + the dev container, and applies DB migrations
+`containers/quadlet/` to `~/.config/containers/systemd/` (rewriting
+`EnvironmentFile=` to this clone's `.env`), reloads systemd, builds the
+image, starts MariaDB + the selected app variant, and applies DB migrations
 (which also seeds the `admin`/`admin` user on an empty database).
 
 ```sh
@@ -56,7 +58,8 @@ scripts/install.sh [--prod] [--no-migrate]
 
 | Option | Effect |
 |--------|--------|
-| `--prod` | also build the production image (`localhost/notestodo-app:latest`) |
+| *(none)* | dev install: Vite on `:5173` + API on `:8080` via `notestodo-dev` |
+| `--prod` | production install: build + start `notestodo-app` (built SPA + API on `:8080`, `APP_ENV=production`); migrations run inside the app container |
 | `--no-migrate` | skip `bun run db:migrate` after startup |
 
 [↑ back to TOC](#table-of-contents)
@@ -123,6 +126,23 @@ scripts/restart.sh [--prod]
 |--------|--------|
 | *(none)* | restart `notestodo-mariadb` + `notestodo-dev` |
 | `--prod` | restart `notestodo-mariadb` + `notestodo-app` |
+
+[↑ back to TOC](#table-of-contents)
+
+## status.sh
+
+One-shot health and diagnostics report — built for remote hosts where
+persistent user journals may be unavailable. Prints unit states, running
+project containers, image build dates, API/web health probes, the last API
+log lines, and a **server-side auth self-test**: a bad-credentials login must
+return `401 invalid credentials`, which proves the API ⇄ database ⇄ session
+stack works end-to-end on the server. If the self-test is OK but a browser
+still gets 401s, the problem is browser-side (stale/blocked session cookie —
+clear site data for the server's address and log in again).
+
+```sh
+scripts/status.sh
+```
 
 [↑ back to TOC](#table-of-contents)
 
