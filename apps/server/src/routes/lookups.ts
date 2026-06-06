@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { asc, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
-import { categories, priorities } from "../db/schema/lookups";
+import { categories, priorities, statuses } from "../db/schema/lookups";
 import { requireAdmin, requireAuth } from "../middleware/auth";
 import { isDupEntry } from "../lib/dbErrors";
 import { nowUtcSql, sqlToIso } from "../lib/time";
@@ -143,5 +143,16 @@ export const priorityRoutes = makeLookupRoutes("/api/v1/priorities", priorities 
   pick: (b) => ({
     ...(b.color !== undefined ? { color: b.color } : {}),
     ...(b.weight !== undefined ? { weight: b.weight } : {}),
+  }),
+});
+
+export const statusRoutes = makeLookupRoutes("/api/v1/statuses", statuses as unknown as typeof categories, () => asc(statuses.sortOrder), {
+  body: {
+    color: t.Optional(t.Nullable(t.String({ maxLength: 16 }))),
+    sortOrder: t.Optional(t.Number()),
+  },
+  pick: (b) => ({
+    ...(b.color !== undefined ? { color: b.color } : {}),
+    ...(b.sortOrder !== undefined ? { sortOrder: b.sortOrder } : {}),
   }),
 });

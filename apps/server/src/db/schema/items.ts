@@ -33,6 +33,7 @@ export const todos = mysqlTable("todos", {
   doneAtUTC: datetime("done_at_UTC", { mode: "string" }),
   dueAtUTC: datetime("due_at_UTC", { mode: "string" }),
   notesMd: text("notes_md"),
+  statusId: bigint("status_id", { mode: "number", unsigned: true }),
 });
 
 export const calendarItems = mysqlTable("calendar_items", {

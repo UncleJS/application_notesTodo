@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useMe, type Me } from "@/features/auth/useMe";
-import { useCategories, usePriorities } from "@/features/lookups/useLookups";
+import { useCategories, usePriorities, useStatuses } from "@/features/lookups/useLookups";
 import { useTags } from "@/features/tags/useTags";
 import { ColorInput } from "@/components/ColorInput";
 import { Button } from "@/components/ui/button";
@@ -513,6 +513,7 @@ export default function SettingsPage() {
   const [showArchived, setShowArchived] = useState(false);
   const categories = useCategories(showArchived);
   const priorities = usePriorities(showArchived);
+  const statuses = useStatuses(showArchived);
   const tags = useTags(showArchived);
 
   return (
@@ -523,6 +524,7 @@ export default function SettingsPage() {
         <TabsList>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="priorities">Priorities</TabsTrigger>
+          <TabsTrigger value="statuses">Statuses</TabsTrigger>
           <TabsTrigger value="tags">Tags</TabsTrigger>
           {canEdit && <TabsTrigger value="smtp">Email (SMTP)</TabsTrigger>}
           {canEdit && <TabsTrigger value="webhook">Webhook</TabsTrigger>}
@@ -547,6 +549,18 @@ export default function SettingsPage() {
             rows={priorities.data}
             numberField="weight"
             numberLabel="Weight"
+            canEdit={canEdit}
+            showArchived={showArchived}
+            onShowArchived={setShowArchived}
+          />
+        </TabsContent>
+        <TabsContent value="statuses">
+          <LookupManager
+            basePath="/api/v1/statuses"
+            queryKey="statuses"
+            rows={statuses.data}
+            numberField="sortOrder"
+            numberLabel="Sort"
             canEdit={canEdit}
             showArchived={showArchived}
             onShowArchived={setShowArchived}

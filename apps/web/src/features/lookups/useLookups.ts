@@ -32,3 +32,19 @@ export function usePriorities(includeArchived = false) {
     staleTime: 60_000,
   });
 }
+
+export interface Status {
+  id: number;
+  name: string;
+  color: string | null;
+  sortOrder: number;
+  archivedAtUTC: string | null;
+}
+
+export function useStatuses(includeArchived = false) {
+  return useQuery({
+    queryKey: ["statuses", includeArchived],
+    queryFn: () => api<Status[]>(`/api/v1/statuses?includeArchived=${includeArchived}`),
+    staleTime: 60_000,
+  });
+}

@@ -1,5 +1,5 @@
 import { Select } from "@/components/ui/select";
-import { useCategories, usePriorities } from "./useLookups";
+import { useCategories, usePriorities, useStatuses } from "./useLookups";
 
 export function CategorySelect({
   value,
@@ -38,6 +38,40 @@ export function PrioritySelect({
         </option>
       ))}
     </Select>
+  );
+}
+
+export function StatusSelect({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (v: number | null) => void;
+}) {
+  const statuses = useStatuses();
+  return (
+    <Select value={value ?? ""} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}>
+      <option value="">No status</option>
+      {statuses.data?.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.name}
+        </option>
+      ))}
+    </Select>
+  );
+}
+
+export function StatusBadge({ statusId }: { statusId: number | null }) {
+  const statuses = useStatuses();
+  const st = statuses.data?.find((s) => s.id === statusId);
+  if (!st) return null;
+  return (
+    <span
+      className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs text-foreground"
+      style={st.color ? { borderColor: st.color } : undefined}
+    >
+      {st.name}
+    </span>
   );
 }
 

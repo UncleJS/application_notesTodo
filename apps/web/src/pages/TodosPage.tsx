@@ -10,9 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DateTimeInput } from "@/components/DateTimeInput";
-import { CategorySelect, LookupBadges, PrioritySelect } from "@/features/lookups/LookupSelects";
+import { CategorySelect, LookupBadges, PrioritySelect, StatusBadge, StatusSelect } from "@/features/lookups/LookupSelects";
 import { TagChips } from "@/features/tags/TagPicker";
-import { useCategories, usePriorities } from "@/features/lookups/useLookups";
+import { useCategories, usePriorities, useStatuses } from "@/features/lookups/useLookups";
 import { useTags } from "@/features/tags/useTags";
 import { InstantiateTemplateDialog } from "@/features/templates/InstantiateTemplateDialog";
 import { useTemplates, type Template } from "@/features/templates/useTemplates";
@@ -29,6 +29,7 @@ export interface Todo {
   ownerId: number;
   categoryId: number | null;
   priorityId: number | null;
+  statusId: number | null;
   archivedAtUTC: string | null;
 }
 
@@ -39,12 +40,20 @@ export interface TodoForm {
   notesMd: string;
   categoryId: number | null;
   priorityId: number | null;
+  statusId: number | null;
   archivedAtUTC?: string | null;
   /** carried along for "save as template" — not edited in this dialog */
   tagIds?: number[];
 }
 
-const emptyForm: TodoForm = { title: "", dueAtUTC: null, notesMd: "", categoryId: null, priorityId: null };
+const emptyForm: TodoForm = {
+  title: "",
+  dueAtUTC: null,
+  notesMd: "",
+  categoryId: null,
+  priorityId: null,
+  statusId: null,
+};
 
 export function TodoDialog({
   form,
@@ -69,6 +78,7 @@ export function TodoDialog({
         notesMd: f.notesMd || null,
         categoryId: f.categoryId,
         priorityId: f.priorityId,
+        statusId: f.statusId,
       };
       return f.id
         ? api<Todo>(`/api/v1/todos/${f.id}`, { method: "PATCH", json })
@@ -162,6 +172,10 @@ export function TodoDialog({
               <Label>Priority</Label>
               <PrioritySelect value={form.priorityId} onChange={(v) => setForm({ ...form, priorityId: v })} />
             </div>
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label>Status</Label>
+              <StatusSelect value={form.statusId} onChange={(v) => setForm({ ...form, statusId: v })} />
+            </div>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Notes</Label>
@@ -246,12 +260,20 @@ export function TodoDialog({
 }
 
 export default function TodosPage() {
-  const [filters, setFilters] = useState({ done: "", category: "", priority: "", tag: "", showArchived: false });
+  const [filters, setFilters] = useState({
+    done: "",
+    category: "",
+    priority: "",
+    status: "",
+    tag: "",
+    showArchived: false,
+  });
   const [form, setForm] = useState<TodoForm | null>(null);
   const [instTpl, setInstTpl] = useState<Template | null>(null);
   const qc = useQueryClient();
   const categories = useCategories();
   const priorities = usePriorities();
+  const statuses = useStatuses();
   const tags = useTags();
   const templates = useTemplates();
 
@@ -264,6 +286,7 @@ export default function TodosPage() {
       if (filters.done) params.set("done", filters.done);
       if (filters.category) params.set("category", filters.category);
       if (filters.priority) params.set("priority", filters.priority);
+      if (filters.status) params.set("status", filters.status);
       if (filters.tag) params.set("tag", filters.tag);
       return api<Todo[]>(`/api/v1/todos?${params}`);
     },
@@ -334,6 +357,18 @@ export default function TodosPage() {
           </Select>
           <Select
             className="w-32"
+            value={filters.status}
+            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+          >
+            <option value="">All statuses</option>
+            {statuses.data?.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </Select>
+          <Select
+            className="w-32"
             value={filters.tag}
             onChange={(e) => setFilters({ ...filters, tag: e.target.value })}
           >
@@ -376,6 +411,7 @@ export default function TodosPage() {
                   notesMd: todo.notesMd ?? "",
                   categoryId: todo.categoryId,
                   priorityId: todo.priorityId,
+                  statusId: todo.statusId,
                   archivedAtUTC: todo.archivedAtUTC,
                   tagIds: todo.tagIds,
                 })
@@ -388,6 +424,7 @@ export default function TodosPage() {
                 <Link2 className="h-3.5 w-3.5 text-foreground" />
               </Link>
             )}
+            <StatusBadge statusId={todo.statusId} />
             <LookupBadges categoryId={todo.categoryId} priorityId={todo.priorityId} />
             <TagChips tagIds={todo.tagIds} />
             {todo.dueAtUTC && (

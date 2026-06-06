@@ -4,7 +4,7 @@ import { health } from "./routes/health";
 import { authRoutes } from "./routes/auth";
 import { adminUserRoutes } from "./routes/admin-users";
 import { adminGroupRoutes } from "./routes/admin-groups";
-import { categoryRoutes, priorityRoutes } from "./routes/lookups";
+import { categoryRoutes, priorityRoutes, statusRoutes } from "./routes/lookups";
 import { noteRoutes } from "./routes/notes";
 import { todoRoutes } from "./routes/todos";
 import { calendarRoutes } from "./routes/calendar";
@@ -40,6 +40,7 @@ const app = new Elysia()
   .use(adminGroupRoutes)
   .use(categoryRoutes)
   .use(priorityRoutes)
+  .use(statusRoutes)
   .use(noteRoutes)
   .use(todoRoutes)
   .use(calendarRoutes)

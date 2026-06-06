@@ -116,6 +116,8 @@ export default function CalendarPage() {
 
   const catColor = (id: number | null) =>
     (id !== null ? categories.data?.find((c) => c.id === id)?.color : null) ?? null;
+  const priColor = (id: number | null) =>
+    (id !== null ? priorities.data?.find((p) => p.id === id)?.color : null) ?? null;
 
   // visible range per view
   const range = useMemo(() => {
@@ -176,6 +178,7 @@ export default function CalendarPage() {
         notesMd: todo.notesMd ?? "",
         categoryId: todo.categoryId,
         priorityId: todo.priorityId,
+        statusId: todo.statusId,
         archivedAtUTC: todo.archivedAtUTC,
         tagIds: todo.tagIds,
       });
@@ -309,13 +312,17 @@ export default function CalendarPage() {
           {d.getDate()}
         </button>
         {dayOcc.slice(0, maxShown).map((o, i) => {
-          const color = catColor(o.categoryId);
+          const cat = catColor(o.categoryId);
+          const pri = priColor(o.priorityId);
           return (
             <button
               key={`${o.itemId}-${o.occurrenceStartUTC}-${i}`}
               type="button"
-              className="flex items-center gap-1 truncate rounded border-l-2 border-transparent bg-secondary px-1 py-0.5 text-left text-xs text-foreground hover:bg-accent"
-              style={color ? { borderLeftColor: color } : undefined}
+              className="flex items-center gap-1 truncate rounded border-l-2 border-r-2 border-transparent bg-secondary px-1 py-0.5 text-left text-xs text-foreground hover:bg-accent"
+              style={{
+                ...(cat ? { borderLeftColor: cat } : {}),
+                ...(pri ? { borderRightColor: pri } : {}),
+              }}
               onClick={() => void openOccurrence(o)}
             >
               {!o.allDay && <span className="shrink-0 font-mono">{localTime(o.occurrenceStartUTC)}</span>}
@@ -449,6 +456,10 @@ export default function CalendarPage() {
                 {formatLocal(o.occurrenceStartUTC)}
                 {o.occurrenceEndUTC ? ` → ${formatLocal(o.occurrenceEndUTC)}` : ""}
               </span>
+              <span
+                className="h-4 w-1 shrink-0 rounded"
+                style={{ backgroundColor: priColor(o.priorityId) ?? "transparent" }}
+              />
             </li>
           ))}
           {occurrences.data?.length === 0 && <p className="py-4 text-sm text-foreground">No events in range.</p>}

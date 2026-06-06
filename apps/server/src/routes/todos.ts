@@ -18,6 +18,7 @@ export function todoDto(item: typeof items.$inferSelect, todo: typeof todos.$inf
     doneAtUTC: sqlToIso(todo.doneAtUTC),
     dueAtUTC: sqlToIso(todo.dueAtUTC),
     notesMd: todo.notesMd,
+    statusId: todo.statusId,
     ownerId: item.ownerId,
     categoryId: item.categoryId,
     priorityId: item.priorityId,
@@ -49,6 +50,7 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
       if (query.priority) conds.push(eq(items.priorityId, Number(query.priority)));
       if (query.done === "true") conds.push(eq(todos.done, true));
       if (query.done === "false") conds.push(eq(todos.done, false));
+      if (query.status) conds.push(eq(todos.statusId, Number(query.status)));
       if (query.tag) {
         conds.push(
           inArray(
@@ -80,6 +82,7 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
         category: t.Optional(t.String()),
         priority: t.Optional(t.String()),
         done: t.Optional(t.String()),
+        status: t.Optional(t.String()),
         tag: t.Optional(t.String()),
       }),
     },
@@ -101,6 +104,7 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
           itemId: res.insertId,
           dueAtUTC: body.dueAtUTC ? isoToSql(body.dueAtUTC) : null,
           notesMd: body.notesMd ?? null,
+          statusId: body.statusId ?? null,
         });
         return res.insertId;
       });
@@ -115,6 +119,7 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
         notesMd: t.Optional(t.Nullable(t.String())),
         categoryId: t.Optional(t.Nullable(t.Number())),
         priorityId: t.Optional(t.Nullable(t.Number())),
+        statusId: t.Optional(t.Nullable(t.Number())),
       }),
     },
   )
@@ -156,6 +161,7 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
         const todoSet: Partial<typeof todos.$inferInsert> = {};
         if (body.dueAtUTC !== undefined) todoSet.dueAtUTC = body.dueAtUTC ? isoToSql(body.dueAtUTC) : null;
         if (body.notesMd !== undefined) todoSet.notesMd = body.notesMd;
+        if (body.statusId !== undefined) todoSet.statusId = body.statusId;
         if (body.done !== undefined) {
           todoSet.done = body.done;
           todoSet.doneAtUTC = body.done ? nowUtcSql() : null;
@@ -175,6 +181,7 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
         notesMd: t.Optional(t.Nullable(t.String())),
         categoryId: t.Optional(t.Nullable(t.Number())),
         priorityId: t.Optional(t.Nullable(t.Number())),
+        statusId: t.Optional(t.Nullable(t.Number())),
       }),
     },
   )

@@ -83,6 +83,15 @@ for (const [name, weight] of defaultPriorities) {
     console.log(`Seeded priority '${name}' (weight ${weight}).`);
   }
 }
+const defaultStatuses = ["Planned", "WIP", "On hold"];
+for (let i = 0; i < defaultStatuses.length; i++) {
+  const name = defaultStatuses[i]!;
+  const [rows] = await conn.query("SELECT id FROM statuses WHERE name = ?", [name]);
+  if ((rows as unknown[]).length === 0) {
+    await conn.query("INSERT INTO statuses (name, sort_order) VALUES (?, ?)", [name, i]);
+    console.log(`Seeded status '${name}'.`);
+  }
+}
 
 console.log(`Migrations up to date (${files.length} total).`);
 await conn.end();

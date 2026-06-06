@@ -19,3 +19,13 @@ export const priorities = mysqlTable("priorities", {
   updatedAtUTC: datetime("updated_at_UTC", { mode: "string" }).notNull(),
   archivedAtUTC: datetime("archived_at_UTC", { mode: "string" }),
 });
+
+export const statuses = mysqlTable("statuses", {
+  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
+  name: varchar("name", { length: 128 }).notNull(),
+  color: varchar("color", { length: 16 }),
+  sortOrder: int("sort_order").notNull().default(0),
+  createdAtUTC: datetime("created_at_UTC", { mode: "string" }).notNull(),
+  updatedAtUTC: datetime("updated_at_UTC", { mode: "string" }).notNull(),
+  archivedAtUTC: datetime("archived_at_UTC", { mode: "string" }),
+});
