@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useMe, type Me } from "@/features/auth/useMe";
 import { useCategories, usePriorities } from "@/features/lookups/useLookups";
 import { useTags } from "@/features/tags/useTags";
+import { ColorInput } from "@/components/ColorInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -118,7 +119,7 @@ function LookupManager({
           }}
         >
           <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="w-44" />
-          <Input placeholder="#color" value={color} onChange={(e) => setColor(e.target.value)} className="w-28" />
+          <ColorInput value={color} onChange={setColor} />
           {numberField && (
             <Input
               placeholder={numberLabel}
@@ -155,12 +156,7 @@ function LookupManager({
                   />
                 </TD>
                 <TD>
-                  <Input
-                    placeholder="#color"
-                    value={edit.color}
-                    onChange={(e) => setEdit({ ...edit, color: e.target.value })}
-                    className="h-8 w-24 text-xs"
-                  />
+                  <ColorInput value={edit.color} onChange={(v) => setEdit({ ...edit, color: v })} />
                 </TD>
                 {numberField && (
                   <TD>
