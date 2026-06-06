@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Link2, Repeat } from "lucide-react";
+import { CheckSquare, ChevronLeft, ChevronRight, Link2, Repeat, Square } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatLocal } from "@/lib/formatLocal";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { CategorySelect, LookupBadges, PrioritySelect } from "@/features/lookups
 import { useCategories, usePriorities } from "@/features/lookups/useLookups";
 import { useTags } from "@/features/tags/useTags";
 import { RecurrenceEditor } from "@/features/calendar/RecurrenceEditor";
+import { TodoDialog, type Todo, type TodoForm } from "@/pages/TodosPage";
 import { cn } from "@/lib/utils";
 
 export interface CalendarItem {
@@ -37,12 +38,14 @@ export interface CalendarItem {
 
 interface Occurrence {
   itemId: number;
+  kind: "event" | "todo";
   title: string;
   occurrenceStartUTC: string;
   occurrenceEndUTC: string | null;
   allDay: boolean;
   recurring: boolean;
   location: string | null;
+  done: boolean | null;
   hasLinks: boolean;
   ownerId: number;
   categoryId: number | null;
@@ -105,10 +108,14 @@ export default function CalendarPage() {
   const [view, setView] = useState<"month" | "week" | "list">("month");
   const [anchor, setAnchor] = useState(() => new Date());
   const [form, setForm] = useState<CalForm | null>(null);
-  const [filters, setFilters] = useState({ category: "", priority: "", tag: "" });
+  const [todoForm, setTodoForm] = useState<TodoForm | null>(null);
+  const [filters, setFilters] = useState({ category: "", priority: "", tag: "", kind: "" });
   const categories = useCategories();
   const priorities = usePriorities();
   const tags = useTags();
+
+  const catColor = (id: number | null) =>
+    (id !== null ? categories.data?.find((c) => c.id === id)?.color : null) ?? null;
 
   // visible range per view
   const range = useMemo(() => {
@@ -141,6 +148,7 @@ export default function CalendarPage() {
       if (filters.category) params.set("category", filters.category);
       if (filters.priority) params.set("priority", filters.priority);
       if (filters.tag) params.set("tag", filters.tag);
+      if (filters.kind) params.set("kind", filters.kind);
       return api<Occurrence[]>(`/api/v1/calendar?${params}`);
     },
   });
@@ -159,6 +167,20 @@ export default function CalendarPage() {
   const invalidate = () => void qc.invalidateQueries({ queryKey: ["calendar"], exact: false });
 
   async function openOccurrence(o: Occurrence) {
+    if (o.kind === "todo") {
+      const todo = await api<Todo>(`/api/v1/todos/${o.itemId}`);
+      setTodoForm({
+        id: todo.id,
+        title: todo.title,
+        dueAtUTC: todo.dueAtUTC,
+        notesMd: todo.notesMd ?? "",
+        categoryId: todo.categoryId,
+        priorityId: todo.priorityId,
+        archivedAtUTC: todo.archivedAtUTC,
+        tagIds: todo.tagIds,
+      });
+      return;
+    }
     const item = await api<CalendarItem>(`/api/v1/calendar/items/${o.itemId}`);
     setForm({
       id: item.id,
@@ -286,19 +308,25 @@ export default function CalendarPage() {
         >
           {d.getDate()}
         </button>
-        {dayOcc.slice(0, maxShown).map((o, i) => (
-          <button
-            key={`${o.itemId}-${o.occurrenceStartUTC}-${i}`}
-            type="button"
-            className="flex items-center gap-1 truncate rounded bg-secondary px-1 py-0.5 text-left text-xs text-foreground hover:bg-accent"
-            onClick={() => void openOccurrence(o)}
-          >
-            {!o.allDay && <span className="shrink-0 font-mono">{localTime(o.occurrenceStartUTC)}</span>}
-            {o.recurring && <Repeat className="h-3 w-3 shrink-0" />}
-            {o.hasLinks && <Link2 className="h-3 w-3 shrink-0" />}
-            <span className="truncate">{o.title}</span>
-          </button>
-        ))}
+        {dayOcc.slice(0, maxShown).map((o, i) => {
+          const color = catColor(o.categoryId);
+          return (
+            <button
+              key={`${o.itemId}-${o.occurrenceStartUTC}-${i}`}
+              type="button"
+              className="flex items-center gap-1 truncate rounded border-l-2 border-transparent bg-secondary px-1 py-0.5 text-left text-xs text-foreground hover:bg-accent"
+              style={color ? { borderLeftColor: color } : undefined}
+              onClick={() => void openOccurrence(o)}
+            >
+              {!o.allDay && <span className="shrink-0 font-mono">{localTime(o.occurrenceStartUTC)}</span>}
+              {o.kind === "todo" &&
+                (o.done ? <CheckSquare className="h-3 w-3 shrink-0" /> : <Square className="h-3 w-3 shrink-0" />)}
+              {o.recurring && <Repeat className="h-3 w-3 shrink-0" />}
+              {o.hasLinks && <Link2 className="h-3 w-3 shrink-0" />}
+              <span className={cn("truncate", o.done && "line-through opacity-70")}>{o.title}</span>
+            </button>
+          );
+        })}
         {dayOcc.length > maxShown && (
           <span className="px-1 text-xs text-foreground/70">+{dayOcc.length - maxShown} more</span>
         )}
@@ -313,6 +341,15 @@ export default function CalendarPage() {
         <Button size="sm" onClick={() => setForm(emptyForm)}>
           New event
         </Button>
+        <Select
+          className="w-28"
+          value={filters.kind}
+          onChange={(e) => setFilters({ ...filters, kind: e.target.value })}
+        >
+          <option value="">All items</option>
+          <option value="event">Events</option>
+          <option value="todo">Todos</option>
+        </Select>
         <Select
           className="w-36"
           value={filters.category}
@@ -388,13 +425,23 @@ export default function CalendarPage() {
               key={`${o.itemId}-${o.occurrenceStartUTC}-${i}`}
               className="flex items-center gap-3 border-b border-border/50 px-1 py-2 hover:bg-accent/40"
             >
+              <span
+                className="h-4 w-1 shrink-0 rounded"
+                style={{ backgroundColor: catColor(o.categoryId) ?? "transparent" }}
+              />
               <button
                 className="min-w-0 flex-1 truncate text-left text-sm font-medium text-foreground"
                 onClick={() => void openOccurrence(o)}
               >
+                {o.kind === "todo" &&
+                  (o.done ? (
+                    <CheckSquare className="mr-1 inline h-3 w-3" />
+                  ) : (
+                    <Square className="mr-1 inline h-3 w-3" />
+                  ))}
                 {o.recurring && <Repeat className="mr-1 inline h-3 w-3" />}
                 {o.hasLinks && <Link2 className="mr-1 inline h-3 w-3" />}
-                {o.title}
+                <span className={cn(o.done && "line-through opacity-70")}>{o.title}</span>
                 {o.location && <span className="ml-2 font-normal text-foreground/70">@ {o.location}</span>}
               </button>
               <LookupBadges categoryId={o.categoryId} priorityId={o.priorityId} />
@@ -408,6 +455,15 @@ export default function CalendarPage() {
         </ul>
       )}
 
+      <TodoDialog
+        form={todoForm}
+        setForm={setTodoForm}
+        onClose={() => {
+          setTodoForm(null);
+          invalidate();
+        }}
+        listKey={["todos"]}
+      />
       {form && (
         <Dialog open onOpenChange={(o) => !o && setForm(null)}>
           <DialogContent className="max-w-lg">

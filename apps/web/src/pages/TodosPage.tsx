@@ -32,7 +32,7 @@ export interface Todo {
   archivedAtUTC: string | null;
 }
 
-interface TodoForm {
+export interface TodoForm {
   id?: number;
   title: string;
   dueAtUTC: string | null;

@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
-import { and, asc, eq, inArray, isNull, like } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, like, lt } from "drizzle-orm";
 import { db } from "../db/client";
-import { calendarExdates, calendarItems, items } from "../db/schema/items";
+import { calendarExdates, calendarItems, items, todos } from "../db/schema/items";
 import { itemTags } from "../db/schema/linksTags";
 import { tagIdsByItem } from "../services/tags";
 import { itemIdsWithLinks } from "../services/links";
@@ -80,29 +80,32 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
         set.status = 422;
         return { error: "range too large (max 400 days)" };
       }
-      const conds = [
-        eq(items.itemType, "calendar" as const),
-        visibleItemsCond(user!),
-        isNull(items.archivedAtUTC),
-      ];
-      if (query.category) conds.push(eq(items.categoryId, Number(query.category)));
-      if (query.priority) conds.push(eq(items.priorityId, Number(query.priority)));
-      if (query.tag) {
-        conds.push(
-          inArray(
-            items.id,
-            db
-              .select({ id: itemTags.itemId })
-              .from(itemTags)
-              .where(and(eq(itemTags.tagId, Number(query.tag)), isNull(itemTags.archivedAtUTC))),
-          ),
-        );
-      }
-      const rows = await db
-        .select()
-        .from(items)
-        .innerJoin(calendarItems, eq(calendarItems.itemId, items.id))
-        .where(and(...conds));
+      const wantEvents = query.kind === undefined || query.kind === "event";
+      const wantTodos = query.kind === undefined || query.kind === "todo";
+      const filterConds = (type: "calendar" | "todo") => {
+        const conds = [eq(items.itemType, type), visibleItemsCond(user!), isNull(items.archivedAtUTC)];
+        if (query.category) conds.push(eq(items.categoryId, Number(query.category)));
+        if (query.priority) conds.push(eq(items.priorityId, Number(query.priority)));
+        if (query.tag) {
+          conds.push(
+            inArray(
+              items.id,
+              db
+                .select({ id: itemTags.itemId })
+                .from(itemTags)
+                .where(and(eq(itemTags.tagId, Number(query.tag)), isNull(itemTags.archivedAtUTC))),
+            ),
+          );
+        }
+        return conds;
+      };
+      const rows = wantEvents
+        ? await db
+            .select()
+            .from(items)
+            .innerJoin(calendarItems, eq(calendarItems.itemId, items.id))
+            .where(and(...filterConds("calendar")))
+        : [];
       const recurringIds = rows.filter((r) => r.calendar_items.rrule).map((r) => r.items.id);
       const exRows = recurringIds.length
         ? await db
@@ -117,29 +120,68 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
         exByItem.set(ex.calendarItemId, set_);
       }
 
-      const linked = await itemIdsWithLinks(rows.map((r) => r.items.id));
+      // due-dated todos shown alongside events
+      const todoRows = wantTodos
+        ? await db
+            .select()
+            .from(items)
+            .innerJoin(todos, eq(todos.itemId, items.id))
+            .where(
+              and(
+                ...filterConds("todo"),
+                gte(todos.dueAtUTC, isoToSql(from.toISOString())),
+                lt(todos.dueAtUTC, isoToSql(to.toISOString())),
+              ),
+            )
+        : [];
+
+      const linked = await itemIdsWithLinks([
+        ...rows.map((r) => r.items.id),
+        ...todoRows.map((r) => r.items.id),
+      ]);
       const occurrences: Array<{
         itemId: number;
+        kind: "event" | "todo";
         title: string;
         occurrenceStartUTC: string;
         occurrenceEndUTC: string | null;
         allDay: boolean;
         recurring: boolean;
         location: string | null;
+        done: boolean | null;
         hasLinks: boolean;
         ownerId: number;
         categoryId: number | null;
         priorityId: number | null;
       }> = [];
+      for (const r of todoRows) {
+        occurrences.push({
+          itemId: r.items.id,
+          kind: "todo",
+          title: r.items.title,
+          occurrenceStartUTC: sqlToDate(r.todos.dueAtUTC!).toISOString(),
+          occurrenceEndUTC: null,
+          allDay: false,
+          recurring: false,
+          location: null,
+          done: r.todos.done,
+          hasLinks: linked.has(r.items.id),
+          ownerId: r.items.ownerId,
+          categoryId: r.items.categoryId,
+          priorityId: r.items.priorityId,
+        });
+      }
       for (const r of rows) {
         const start = sqlToDate(r.calendar_items.startAtUTC);
         const end = r.calendar_items.endAtUTC ? sqlToDate(r.calendar_items.endAtUTC) : null;
         const base = {
           itemId: r.items.id,
+          kind: "event" as const,
           title: r.items.title,
           allDay: r.calendar_items.allDay,
           recurring: !!r.calendar_items.rrule,
           location: r.calendar_items.location,
+          done: null,
           hasLinks: linked.has(r.items.id),
           ownerId: r.items.ownerId,
           categoryId: r.items.categoryId,
@@ -186,6 +228,7 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
         category: t.Optional(t.String()),
         priority: t.Optional(t.String()),
         tag: t.Optional(t.String()),
+        kind: t.Optional(t.Union([t.Literal("event"), t.Literal("todo")])),
       }),
     },
   )

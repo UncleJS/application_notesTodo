@@ -27,7 +27,7 @@ export default function DashboardPage() {
     queryKey: ["calendar", "dashboard"],
     queryFn: () =>
       api<Occurrence[]>(
-        `/api/v1/calendar?from=${encodeURIComponent(now.toISOString())}&to=${encodeURIComponent(weekAhead.toISOString())}`,
+        `/api/v1/calendar?kind=event&from=${encodeURIComponent(now.toISOString())}&to=${encodeURIComponent(weekAhead.toISOString())}`,
       ),
   });
   const notes = useQuery({
