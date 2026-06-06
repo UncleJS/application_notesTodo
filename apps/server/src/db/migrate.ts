@@ -59,5 +59,30 @@ if ((userCount as { n: number }[])[0]!.n === 0) {
   console.log("Seeded admin user — username 'admin', password 'admin'. CHANGE IT after first login.");
 }
 
+// Seed: default lookups — insert-by-name, idempotent (skips names that
+// already exist, archived or active), so reruns and pre-populated DBs are safe.
+const defaultCategories = ["Personal", "Work", "Hobby"];
+for (let i = 0; i < defaultCategories.length; i++) {
+  const name = defaultCategories[i]!;
+  const [rows] = await conn.query("SELECT id FROM categories WHERE name = ?", [name]);
+  if ((rows as unknown[]).length === 0) {
+    await conn.query("INSERT INTO categories (name, sort_order) VALUES (?, ?)", [name, i]);
+    console.log(`Seeded category '${name}'.`);
+  }
+}
+const defaultPriorities: Array<[string, number]> = [
+  ["Low", 1],
+  ["Medium", 2],
+  ["High", 3],
+  ["Immediate", 4],
+];
+for (const [name, weight] of defaultPriorities) {
+  const [rows] = await conn.query("SELECT id FROM priorities WHERE name = ?", [name]);
+  if ((rows as unknown[]).length === 0) {
+    await conn.query("INSERT INTO priorities (name, weight) VALUES (?, ?)", [name, weight]);
+    console.log(`Seeded priority '${name}' (weight ${weight}).`);
+  }
+}
+
 console.log(`Migrations up to date (${files.length} total).`);
 await conn.end();
