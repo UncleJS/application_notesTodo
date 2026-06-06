@@ -30,6 +30,7 @@ function templateItemDto(r: typeof templateItems.$inferSelect, tagIds: number[] 
     title: r.title,
     categoryId: r.categoryId,
     priorityId: r.priorityId,
+    statusId: r.statusId,
     relativeDueDays: r.relativeDueDays,
     sortOrder: r.sortOrder,
     bodyMd: r.bodyMd,
@@ -96,6 +97,7 @@ const templateItemBody = {
   itemType: t.Optional(t.Union([t.Literal("note"), t.Literal("todo"), t.Literal("calendar")])),
   categoryId: t.Optional(t.Nullable(t.Number())),
   priorityId: t.Optional(t.Nullable(t.Number())),
+  statusId: t.Optional(t.Nullable(t.Number())),
   relativeDueDays: t.Optional(t.Nullable(t.Number())),
   sortOrder: t.Optional(t.Number()),
   tagIds: t.Optional(t.Array(t.Number())),
@@ -323,6 +325,7 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
           title: body.title,
           categoryId: body.categoryId ?? null,
           priorityId: body.priorityId ?? null,
+          statusId: body.statusId ?? null,
           relativeDueDays: body.relativeDueDays ?? null,
           sortOrder: body.sortOrder ?? 0,
           bodyMd: body.bodyMd ?? null,
@@ -368,6 +371,7 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
           ...(body.itemType !== undefined ? { itemType: body.itemType } : {}),
           ...(body.categoryId !== undefined ? { categoryId: body.categoryId } : {}),
           ...(body.priorityId !== undefined ? { priorityId: body.priorityId } : {}),
+          ...(body.statusId !== undefined ? { statusId: body.statusId } : {}),
           ...(body.relativeDueDays !== undefined ? { relativeDueDays: body.relativeDueDays } : {}),
           ...(body.sortOrder !== undefined ? { sortOrder: body.sortOrder } : {}),
           ...(body.bodyMd !== undefined ? { bodyMd: body.bodyMd } : {}),
@@ -503,7 +507,7 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
             });
           } else {
             const due = ti.relativeDueDays !== null ? toSqlUtc(offset) : null;
-            await tx.insert(todos).values({ itemId: res.insertId, dueAtUTC: due });
+            await tx.insert(todos).values({ itemId: res.insertId, dueAtUTC: due, statusId: ti.statusId });
           }
           // tags: template-level tags + this item's own tags
           const tagIds = [...new Set([...tplTagIds, ...(tagMap.get(ti.id) ?? [])])];

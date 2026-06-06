@@ -31,6 +31,8 @@ export const templateItems = mysqlTable("template_items", {
   title: varchar("title", { length: 512 }).notNull(),
   categoryId: bigint("category_id", { mode: "number", unsigned: true }),
   priorityId: bigint("priority_id", { mode: "number", unsigned: true }),
+  /** todo items only — copied onto the created todo */
+  statusId: bigint("status_id", { mode: "number", unsigned: true }),
   /** due (todo) / start (calendar) offset in days from the instantiation base date */
   relativeDueDays: int("relative_due_days"),
   sortOrder: int("sort_order").notNull().default(0),

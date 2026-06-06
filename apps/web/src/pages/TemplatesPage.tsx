@@ -11,8 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
 import { TimeInput } from "@/components/TimeInput";
-import { CategorySelect, PrioritySelect } from "@/features/lookups/LookupSelects";
-import { useCategories, usePriorities } from "@/features/lookups/useLookups";
+import { CategorySelect, PrioritySelect, StatusBadge } from "@/features/lookups/LookupSelects";
+import { useCategories, usePriorities, useStatuses } from "@/features/lookups/useLookups";
 import { TagChips } from "@/features/tags/TagPicker";
 import { useTags } from "@/features/tags/useTags";
 import { InstantiateTemplateDialog } from "@/features/templates/InstantiateTemplateDialog";
@@ -25,6 +25,7 @@ export interface TemplateItem {
   title: string;
   categoryId: number | null;
   priorityId: number | null;
+  statusId: number | null;
   relativeDueDays: number | null;
   sortOrder: number;
   bodyMd: string | null;
@@ -50,6 +51,7 @@ const emptyNewItem = {
   relativeDueDays: "",
   categoryId: "",
   priorityId: "",
+  statusId: "",
   tagIds: [] as number[],
   bodyMd: "",
   startTimeUTC: null as string | null,
@@ -208,11 +210,13 @@ function TemplateCard({ template }: { template: Template }) {
   });
   const categories = useCategories();
   const priorities = usePriorities();
+  const statuses = useStatuses();
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: ["templates"], exact: false });
 
   const [newItem, setNewItem] = useState(emptyNewItem);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const isTodo = newItem.itemType === "todo";
   const isNote = newItem.itemType === "note";
   const isCal = newItem.itemType === "calendar";
   const saveItem = useMutation({
@@ -224,6 +228,7 @@ function TemplateCard({ template }: { template: Template }) {
           !isNote && newItem.relativeDueDays !== "" ? Number(newItem.relativeDueDays) : null,
         categoryId: newItem.categoryId ? Number(newItem.categoryId) : null,
         priorityId: newItem.priorityId ? Number(newItem.priorityId) : null,
+        statusId: isTodo && newItem.statusId ? Number(newItem.statusId) : null,
         tagIds: newItem.tagIds,
         bodyMd: isNote && newItem.bodyMd ? newItem.bodyMd : null,
         startTimeUTC: isCal && !newItem.allDay ? newItem.startTimeUTC : null,
@@ -257,6 +262,7 @@ function TemplateCard({ template }: { template: Template }) {
       relativeDueDays: item.relativeDueDays !== null ? String(item.relativeDueDays) : "",
       categoryId: item.categoryId !== null ? String(item.categoryId) : "",
       priorityId: item.priorityId !== null ? String(item.priorityId) : "",
+      statusId: item.statusId !== null ? String(item.statusId) : "",
       tagIds: [...item.tagIds],
       bodyMd: item.bodyMd ?? "",
       startTimeUTC: item.startTimeUTC,
@@ -331,6 +337,7 @@ function TemplateCard({ template }: { template: Template }) {
                   {item.itemType === "calendar" ? "event" : item.itemType}
                 </Badge>
                 <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                {item.itemType === "todo" && <StatusBadge statusId={item.statusId} />}
                 <TagChips tagIds={item.tagIds} />
                 {item.itemType === "calendar" && (
                   <span className="text-xs text-foreground/70">
@@ -449,6 +456,20 @@ function TemplateCard({ template }: { template: Template }) {
                 </option>
               ))}
             </Select>
+            {isTodo && (
+              <Select
+                className="h-8 w-32 text-xs"
+                value={newItem.statusId}
+                onChange={(e) => setNewItem({ ...newItem, statusId: e.target.value })}
+              >
+                <option value="">Status…</option>
+                {statuses.data?.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            )}
             <TagIdsPicker
               tagIds={newItem.tagIds}
               onChange={(tagIds) => setNewItem({ ...newItem, tagIds })}

@@ -123,6 +123,7 @@ export function TodoDialog({
           title: f.title,
           categoryId: f.categoryId,
           priorityId: f.priorityId,
+          statusId: f.statusId,
           relativeDueDays,
           sortOrder: 0,
           tagIds: f.tagIds ?? [],
