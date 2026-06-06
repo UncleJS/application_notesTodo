@@ -58,6 +58,19 @@ require_env() {
   fi
 }
 
+# --- dev/prod mutual exclusion ---------------------------------------------
+# The Quadlet-generated pod service Wants= every member container, so ANY pod
+# start also pulls up notestodo-app. Dev and prod both listen on pod port 8080
+# (SO_REUSEPORT) — if both run, requests alternate between code versions.
+# Always stop the sibling AFTER starting the wanted variant.
+
+ensure_only() { # ensure_only dev|app
+  local keep="$1" other
+  if [[ "$keep" == "dev" ]]; then other="app"; else other="dev"; fi
+  systemctl --user stop "${PROJECT_NAME}-${other}" 2>/dev/null || true
+  systemctl --user reset-failed "${PROJECT_NAME}-${other}.service" 2>/dev/null || true
+}
+
 # --- install / update sequencing -------------------------------------------
 
 sync_quadlets() {

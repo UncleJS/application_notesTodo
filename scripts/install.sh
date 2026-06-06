@@ -25,6 +25,7 @@ $PROD && build_prod_image
 
 systemctl --user start "${PROJECT_NAME}-mariadb"
 systemctl --user start "${PROJECT_NAME}-dev"
+ensure_only dev
 
 if $MIGRATE; then
   echo "Applying DB migrations…"

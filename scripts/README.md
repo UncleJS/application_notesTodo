@@ -11,6 +11,13 @@ Rootless-Podman / Quadlet lifecycle scripts for NotesTodo. All of them are
 same host). Every script sources [`lib.sh`](lib.sh) for the shared project
 definitions and helpers.
 
+> **Dev/prod mutual exclusion**: the Quadlet-generated pod service `Wants=`
+> every member container, so any pod start also pulls up `notestodo-app`.
+> Dev and prod both listen on pod port 8080 — if both run, requests alternate
+> between code versions (stale responses!). Every start/restart/rebuild
+> therefore stops the sibling variant afterwards (`ensure_only` in `lib.sh`).
+> Always switch modes via these scripts, not raw `systemctl`.
+
 ## Table of contents
 
 - [Prerequisites](#prerequisites)

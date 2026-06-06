@@ -18,8 +18,10 @@ require_env
 systemctl --user restart "${PROJECT_NAME}-mariadb"
 if $PROD; then
   systemctl --user restart "${PROJECT_NAME}-app"
+  ensure_only app
   echo "Restarted (production): http://127.0.0.1:8080"
 else
   systemctl --user restart "${PROJECT_NAME}-dev"
+  ensure_only dev
   echo "Restarted (dev): web http://127.0.0.1:5173 — API http://127.0.0.1:8080"
 fi
