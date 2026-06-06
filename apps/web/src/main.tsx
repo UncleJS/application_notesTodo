@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { setUnauthorizedHandler } from "@/lib/api";
+import { clearSessionToken, setUnauthorizedHandler } from "@/lib/api";
 import App from "./App";
 import "./index.css";
 
@@ -11,8 +11,9 @@ const queryClient = new QueryClient({
   },
 });
 
-// Dead/expired session → drop the cached user and return to the login page.
+// Dead/expired session → drop the cached user + token, return to login.
 setUnauthorizedHandler(() => {
+  clearSessionToken();
   queryClient.setQueryData(["me"], null);
   if (window.location.pathname !== "/login") {
     window.location.assign("/login");
