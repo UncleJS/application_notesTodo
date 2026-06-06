@@ -1,0 +1,21 @@
+{
+  "name": "notestodo",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter './apps/*' dev",
+    "build": "bun run --filter './apps/*' build",
+    "test": "bun test",
+    "typecheck": "bunx tsc -b apps/server apps/web",
+    "db:generate": "cd apps/server && bun run db:generate",
+    "db:migrate": "cd apps/server && bun run db:migrate",
+    "types:generate": "bunx openapi-typescript packages/spec/openapi.yaml -o packages/types/api.d.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "openapi-typescript": "^7.6.0"
+  }
+}

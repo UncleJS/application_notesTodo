@@ -1,0 +1,11 @@
+[Unit]
+Description=NotesTodo pod
+
+[Pod]
+PodName=notestodo-pod
+# Only app HTTP + Vite dev ports are published. MariaDB stays pod-internal.
+PublishPort=8080:8080
+PublishPort=5173:5173
+
+[Install]
+WantedBy=default.target

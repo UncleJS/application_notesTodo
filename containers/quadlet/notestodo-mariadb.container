@@ -1,0 +1,16 @@
+[Unit]
+Description=NotesTodo MariaDB
+
+[Container]
+Image=docker.io/library/mariadb:11
+ContainerName=notestodo-mariadb
+Pod=notestodo-pod.pod
+Volume=notestodo-mariadb.volume:/var/lib/mysql:Z
+EnvironmentFile=%h/0_opencode/application_notesTodo/.env
+# No PublishPort — DB is reachable only inside the pod at localhost:3306
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

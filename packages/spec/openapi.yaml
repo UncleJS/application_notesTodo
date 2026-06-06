@@ -1,0 +1,1398 @@
+openapi: 3.1.0
+info:
+  title: NotesTodo API
+  description: |
+    Notes + Todos + Calendar with any↔any item linking, shared tags, todo
+    templates, per-item sharing (users/groups, view/edit) and reminders via
+    email (SMTP) and webhook.
+
+    Conventions:
+    - All timestamps are ISO-8601 UTC (`...Z`); DB columns end with `_UTC`.
+    - DELETE archives (sets `archived_at_UTC`); `POST .../restore` restores.
+    - List endpoints return active rows unless `includeArchived=true`.
+    - Auth is the `sid` session cookie set by `/api/v1/auth/login`.
+    - Item access levels: owner > edit > view. Reads need ≥view, writes ≥edit,
+      archive/share owner-only. Admins act as owner.
+  version: 1.0.0
+servers:
+  - url: /
+tags:
+  - name: system
+  - name: auth
+  - name: admin
+  - name: lookups
+  - name: notes
+  - name: todos
+  - name: calendar
+  - name: tags
+  - name: items
+  - name: templates
+  - name: shares
+  - name: reminders
+  - name: settings
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [system]
+      summary: Liveness + DB reachability
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, db, time_UTC]
+                properties:
+                  status: { type: string, enum: [ok] }
+                  db: { type: string, enum: [ok, down] }
+                  time_UTC: { type: string, format: date-time }
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Log in (sets `sid` cookie)
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: Logged in, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Log out
+      operationId: logout
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Current user
+      operationId: getMe
+      responses:
+        "200": { description: Current user, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [auth]
+      summary: Update own profile (display name, email)
+      operationId: updateMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName: { type: [string, "null"] }
+                email: { type: [string, "null"] }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+  /api/v1/auth/change-password:
+    post:
+      tags: [auth]
+      summary: Change own password
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 4 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/admin/users:
+    get:
+      tags: [admin]
+      summary: List users (admin)
+      operationId: listUsers
+      parameters: [{ $ref: "#/components/parameters/IncludeArchived" }]
+      responses:
+        "200": { description: Users, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AdminUser" } } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin]
+      summary: Create user (admin)
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, maxLength: 64 }
+                password: { type: string, minLength: 4 }
+                displayName: { type: [string, "null"] }
+                email: { type: [string, "null"] }
+                isAdmin: { type: boolean }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/AdminUser" } } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/admin/users/{id}:
+    patch:
+      tags: [admin]
+      summary: Update user (admin)
+      operationId: updateUser
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName: { type: [string, "null"] }
+                email: { type: [string, "null"] }
+                isAdmin: { type: boolean }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/AdminUser" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [admin]
+      summary: Archive user (admin)
+      operationId: archiveUser
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/admin/users/{id}/restore:
+    post:
+      tags: [admin]
+      summary: Restore archived user (admin)
+      operationId: restoreUser
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/admin/users/{id}/reset-password:
+    post:
+      tags: [admin]
+      summary: Reset a user's password (admin)
+      operationId: resetUserPassword
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, minLength: 4 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/v1/admin/groups:
+    get:
+      tags: [admin]
+      summary: List groups (admin)
+      operationId: listGroups
+      parameters: [{ $ref: "#/components/parameters/IncludeArchived" }]
+      responses:
+        "200": { description: Groups, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Group" } } } } }
+    post:
+      tags: [admin]
+      summary: Create group (admin)
+      operationId: createGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 128 }
+                description: { type: [string, "null"] }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Group" } } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/admin/groups/{id}:
+    patch:
+      tags: [admin]
+      summary: Update group (admin)
+      operationId: updateGroup
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: [string, "null"] }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Group" } } } }
+    delete:
+      tags: [admin]
+      summary: Archive group (admin)
+      operationId: archiveGroup
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/admin/groups/{id}/restore:
+    post:
+      tags: [admin]
+      summary: Restore archived group (admin)
+      operationId: restoreGroup
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/admin/groups/{id}/members:
+    get:
+      tags: [admin]
+      summary: List group members (admin)
+      operationId: listGroupMembers
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Members, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/GroupMember" } } } } }
+    post:
+      tags: [admin]
+      summary: Add user to group (admin)
+      operationId: addGroupMember
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId: { type: integer }
+      responses:
+        "201": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/admin/groups/{id}/members/{userId}:
+    delete:
+      tags: [admin]
+      summary: Remove user from group (admin)
+      operationId: removeGroupMember
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - { name: userId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/v1/categories:
+    get:
+      tags: [lookups]
+      summary: List categories
+      operationId: listCategories
+      parameters: [{ $ref: "#/components/parameters/IncludeArchived" }]
+      responses:
+        "200": { description: Categories, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Category" } } } } }
+    post:
+      tags: [lookups]
+      summary: Create category (admin)
+      operationId: createCategory
+      requestBody: { $ref: "#/components/requestBodies/CategoryBody" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/categories/{id}:
+    patch:
+      tags: [lookups]
+      summary: Update category (admin)
+      operationId: updateCategory
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { $ref: "#/components/requestBodies/CategoryBody" }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } }
+    delete:
+      tags: [lookups]
+      summary: Archive category (admin)
+      operationId: archiveCategory
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/categories/{id}/restore:
+    post:
+      tags: [lookups]
+      summary: Restore category (admin)
+      operationId: restoreCategory
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/priorities:
+    get:
+      tags: [lookups]
+      summary: List priorities
+      operationId: listPriorities
+      parameters: [{ $ref: "#/components/parameters/IncludeArchived" }]
+      responses:
+        "200": { description: Priorities, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Priority" } } } } }
+    post:
+      tags: [lookups]
+      summary: Create priority (admin)
+      operationId: createPriority
+      requestBody: { $ref: "#/components/requestBodies/PriorityBody" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Priority" } } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/priorities/{id}:
+    patch:
+      tags: [lookups]
+      summary: Update priority (admin)
+      operationId: updatePriority
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { $ref: "#/components/requestBodies/PriorityBody" }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Priority" } } } }
+    delete:
+      tags: [lookups]
+      summary: Archive priority (admin)
+      operationId: archivePriority
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/priorities/{id}/restore:
+    post:
+      tags: [lookups]
+      summary: Restore priority (admin)
+      operationId: restorePriority
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/notes:
+    get:
+      tags: [notes]
+      summary: List visible notes
+      operationId: listNotes
+      parameters:
+        - $ref: "#/components/parameters/IncludeArchived"
+        - { name: q, in: query, schema: { type: string }, description: "Search title/body" }
+        - { name: category, in: query, schema: { type: integer } }
+        - { name: tag, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Notes, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Note" } } } } }
+    post:
+      tags: [notes]
+      summary: Create note
+      operationId: createNote
+      requestBody: { $ref: "#/components/requestBodies/NoteBody" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Note" } } } }
+  /api/v1/notes/{id}:
+    get:
+      tags: [notes]
+      summary: Get note (≥view)
+      operationId: getNote
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Note, content: { application/json: { schema: { $ref: "#/components/schemas/Note" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [notes]
+      summary: Update note (≥edit)
+      operationId: updateNote
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { $ref: "#/components/requestBodies/NoteBody" }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Note" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      tags: [notes]
+      summary: Archive note (owner)
+      operationId: archiveNote
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/notes/{id}/restore:
+    post:
+      tags: [notes]
+      summary: Restore note (owner)
+      operationId: restoreNote
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/v1/todos:
+    get:
+      tags: [todos]
+      summary: List visible todos
+      operationId: listTodos
+      parameters:
+        - $ref: "#/components/parameters/IncludeArchived"
+        - { name: q, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: integer } }
+        - { name: priority, in: query, schema: { type: integer } }
+        - { name: tag, in: query, schema: { type: integer } }
+        - { name: done, in: query, schema: { type: string, enum: ["true", "false"] } }
+      responses:
+        "200": { description: Todos, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Todo" } } } } }
+    post:
+      tags: [todos]
+      summary: Create todo
+      operationId: createTodo
+      requestBody: { $ref: "#/components/requestBodies/TodoBody" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Todo" } } } }
+  /api/v1/todos/{id}:
+    get:
+      tags: [todos]
+      summary: Get todo (≥view)
+      operationId: getTodo
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Todo, content: { application/json: { schema: { $ref: "#/components/schemas/Todo" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [todos]
+      summary: Update todo (≥edit)
+      operationId: updateTodo
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { $ref: "#/components/requestBodies/TodoBody" }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Todo" } } } }
+    delete:
+      tags: [todos]
+      summary: Archive todo (owner)
+      operationId: archiveTodo
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/todos/{id}/toggle:
+    post:
+      tags: [todos]
+      summary: Toggle done (≥edit)
+      operationId: toggleTodo
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Todo" } } } }
+  /api/v1/todos/{id}/restore:
+    post:
+      tags: [todos]
+      summary: Restore todo (owner)
+      operationId: restoreTodo
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/v1/calendar:
+    get:
+      tags: [calendar]
+      summary: Expanded occurrences in a range (RRULE-aware, EXDATEs applied)
+      operationId: getCalendarRange
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time }, description: "Max 400 days after `from`" }
+      responses:
+        "200": { description: Occurrences, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Occurrence" } } } } }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /api/v1/calendar/items:
+    get:
+      tags: [calendar]
+      summary: List visible calendar items (base rows, not expanded)
+      operationId: listCalendarItems
+      parameters:
+        - $ref: "#/components/parameters/IncludeArchived"
+        - { name: q, in: query, schema: { type: string } }
+        - { name: tag, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Items, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/CalendarItem" } } } } }
+    post:
+      tags: [calendar]
+      summary: Create calendar item
+      operationId: createCalendarItem
+      requestBody: { $ref: "#/components/requestBodies/CalendarBody" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarItem" } } } }
+  /api/v1/calendar/items/{id}:
+    get:
+      tags: [calendar]
+      summary: Get calendar item (≥view)
+      operationId: getCalendarItem
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Item, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarItem" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [calendar]
+      summary: Update calendar item (≥edit; `exdatesUTC` replaces the EXDATE list)
+      operationId: updateCalendarItem
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { $ref: "#/components/requestBodies/CalendarBody" }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarItem" } } } }
+    delete:
+      tags: [calendar]
+      summary: Archive calendar item (owner)
+      operationId: archiveCalendarItem
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/calendar/items/{id}/restore:
+    post:
+      tags: [calendar]
+      summary: Restore calendar item (owner)
+      operationId: restoreCalendarItem
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/v1/tags:
+    get:
+      tags: [tags]
+      summary: List tags
+      operationId: listTags
+      parameters: [{ $ref: "#/components/parameters/IncludeArchived" }]
+      responses:
+        "200": { description: Tags, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Tag" } } } } }
+    post:
+      tags: [tags]
+      summary: Create tag (any user)
+      operationId: createTag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 64 }
+                color: { type: [string, "null"] }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Tag" } } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/tags/{id}:
+    patch:
+      tags: [tags]
+      summary: Update tag (admin)
+      operationId: updateTag
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                color: { type: [string, "null"] }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Tag" } } } }
+    delete:
+      tags: [tags]
+      summary: Archive tag (admin)
+      operationId: archiveTag
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/tags/{id}/restore:
+    post:
+      tags: [tags]
+      summary: Restore tag (admin)
+      operationId: restoreTag
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/items/{id}/tags:
+    post:
+      tags: [tags]
+      summary: Attach tag to item (≥edit)
+      operationId: attachTag
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tagId]
+              properties:
+                tagId: { type: integer }
+      responses:
+        "201": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/items/{id}/tags/{tagId}:
+    delete:
+      tags: [tags]
+      summary: Detach tag from item (≥edit)
+      operationId: detachTag
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - { name: tagId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/v1/items:
+    get:
+      tags: [items]
+      summary: Search visible items (link picker)
+      operationId: searchItems
+      parameters:
+        - { name: type, in: query, schema: { type: string, enum: [note, todo, calendar] } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Items (max 30), content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ItemRef" } } } } }
+  /api/v1/items/{id}:
+    get:
+      tags: [items]
+      summary: Get base item with the caller's access level
+      operationId: getItem
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Base item, content: { application/json: { schema: { $ref: "#/components/schemas/BaseItem" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/items/{id}/links:
+    get:
+      tags: [items]
+      summary: Linked items (bidirectional, ≥view)
+      operationId: listLinks
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Links, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Link" } } } } }
+    post:
+      tags: [items]
+      summary: Link two items (≥edit on source, ≥view on target)
+      operationId: createLink
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [toItemId]
+              properties:
+                toItemId: { type: integer }
+                linkType: { type: [string, "null"], maxLength: 64 }
+      responses:
+        "201": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/links/{id}:
+    delete:
+      tags: [items]
+      summary: Archive link (≥edit on either endpoint)
+      operationId: deleteLink
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/v1/todo-templates:
+    get:
+      tags: [templates]
+      summary: List own todo templates
+      operationId: listTemplates
+      parameters: [{ $ref: "#/components/parameters/IncludeArchived" }]
+      responses:
+        "200": { description: Templates, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Template" } } } } }
+    post:
+      tags: [templates]
+      summary: Create template
+      operationId: createTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 255 }
+                description: { type: [string, "null"] }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/todo-templates/{id}:
+    get:
+      tags: [templates]
+      summary: Get template with items
+      operationId: getTemplate
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Template, content: { application/json: { schema: { $ref: "#/components/schemas/TemplateWithItems" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [templates]
+      summary: Update template
+      operationId: updateTemplate
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: [string, "null"] }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } } }
+    delete:
+      tags: [templates]
+      summary: Archive template
+      operationId: archiveTemplate
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/todo-templates/{id}/restore:
+    post:
+      tags: [templates]
+      summary: Restore template
+      operationId: restoreTemplate
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/todo-templates/{id}/items:
+    post:
+      tags: [templates]
+      summary: Add template item
+      operationId: addTemplateItem
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { $ref: "#/components/requestBodies/TemplateItemBody" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/TemplateItem" } } } }
+  /api/v1/todo-templates/{id}/items/{itemId}:
+    patch:
+      tags: [templates]
+      summary: Update template item
+      operationId: updateTemplateItem
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - { name: itemId, in: path, required: true, schema: { type: integer } }
+      requestBody: { $ref: "#/components/requestBodies/TemplateItemBody" }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/TemplateItem" } } } }
+    delete:
+      tags: [templates]
+      summary: Archive template item
+      operationId: archiveTemplateItem
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - { name: itemId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/todo-templates/{id}/instantiate:
+    post:
+      tags: [templates]
+      summary: Create todos from the template (due = baseDate + relativeDueDays)
+      operationId: instantiateTemplate
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                baseDateUTC: { type: string, format: date-time, description: "Defaults to now" }
+      responses:
+        "201":
+          description: Created todos
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [createdTodoIds]
+                properties:
+                  createdTodoIds: { type: array, items: { type: integer } }
+        "400": { description: Template has no items, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/v1/directory/users:
+    get:
+      tags: [shares]
+      summary: Active users (share-target picker)
+      operationId: listDirectoryUsers
+      responses:
+        "200": { description: Users, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/DirectoryUser" } } } } }
+  /api/v1/directory/groups:
+    get:
+      tags: [shares]
+      summary: Active groups (share-target picker)
+      operationId: listDirectoryGroups
+      responses:
+        "200": { description: Groups, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/DirectoryGroup" } } } } }
+  /api/v1/items/{id}/shares:
+    get:
+      tags: [shares]
+      summary: List shares on an item (owner)
+      operationId: listShares
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Shares, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Share" } } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [shares]
+      summary: Share item with a user or group (owner)
+      operationId: createShare
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [granteeType, granteeId, level]
+              properties:
+                granteeType: { type: string, enum: [user, group] }
+                granteeId: { type: integer }
+                level: { type: string, enum: [view, edit] }
+      responses:
+        "201": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/shares/{id}:
+    patch:
+      tags: [shares]
+      summary: Change share level (owner)
+      operationId: updateShare
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [level]
+              properties:
+                level: { type: string, enum: [view, edit] }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    delete:
+      tags: [shares]
+      summary: Remove share (owner)
+      operationId: deleteShare
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/v1/items/{id}/reminders:
+    get:
+      tags: [reminders]
+      summary: List reminders on an item (owner sees all, others their own)
+      operationId: listReminders
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Reminders, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Reminder" } } } } }
+    post:
+      tags: [reminders]
+      summary: Create reminder (absolute time, or minutes before each calendar occurrence)
+      operationId: createReminder
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channels]
+              properties:
+                remindAtUTC: { type: [string, "null"], format: date-time }
+                offsetMinutes: { type: [integer, "null"], minimum: 0, description: "Calendar items only" }
+                channels: { type: array, items: { type: string, enum: [email, webhook] }, minItems: 1 }
+                recipientUserId: { type: [integer, "null"], description: "Defaults to creator" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Reminder" } } } }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /api/v1/reminders/{id}:
+    patch:
+      tags: [reminders]
+      summary: Update reminder (creator or item owner)
+      operationId: updateReminder
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                remindAtUTC: { type: [string, "null"], format: date-time }
+                offsetMinutes: { type: [integer, "null"] }
+                channels: { type: array, items: { type: string, enum: [email, webhook] } }
+                recipientUserId: { type: [integer, "null"] }
+                enabled: { type: boolean }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Reminder" } } } }
+    delete:
+      tags: [reminders]
+      summary: Archive reminder (creator or item owner)
+      operationId: deleteReminder
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/reminders/{id}/dispatches:
+    get:
+      tags: [reminders]
+      summary: Dispatch log (last 50)
+      operationId: listReminderDispatches
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Dispatches, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Dispatch" } } } } }
+
+  /api/v1/settings/smtp:
+    get:
+      tags: [settings]
+      summary: SMTP config (admin; password never returned)
+      operationId: getSmtpSettings
+      responses:
+        "200": { description: Config, content: { application/json: { schema: { $ref: "#/components/schemas/SmtpSettings" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [settings]
+      summary: Save SMTP config (admin; omit `password` to keep stored one)
+      operationId: putSmtpSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [host, port, from, tls]
+              properties:
+                host: { type: [string, "null"] }
+                port: { type: [integer, "null"] }
+                user: { type: [string, "null"] }
+                password: { type: [string, "null"], description: "Stored AES-256-GCM encrypted" }
+                from: { type: [string, "null"] }
+                tls: { type: string, enum: [none, starttls, tls] }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/settings/smtp/test:
+    post:
+      tags: [settings]
+      summary: Send a test email (admin)
+      operationId: testSmtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to: { type: string, description: "Defaults to caller's email" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "502": { description: Send failed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/settings/webhook:
+    get:
+      tags: [settings]
+      summary: Webhook config (admin; secret never returned)
+      operationId: getWebhookSettings
+      responses:
+        "200": { description: Config, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookSettings" } } } }
+    put:
+      tags: [settings]
+      summary: Save webhook config (admin; omit `secret` to keep stored one)
+      operationId: putWebhookSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, enabled]
+              properties:
+                url: { type: [string, "null"] }
+                enabled: { type: boolean }
+                secret: { type: [string, "null"], description: "HMAC-SHA256 key; signature sent as x-notestodo-signature" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/settings/webhook/test:
+    post:
+      tags: [settings]
+      summary: Send a signed test POST to the webhook (admin)
+      operationId: testWebhook
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "502": { description: Request failed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    IncludeArchived:
+      name: includeArchived
+      in: query
+      required: false
+      schema: { type: string, enum: ["true", "false"] }
+
+  requestBodies:
+    CategoryBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              name: { type: string, maxLength: 128 }
+              color: { type: [string, "null"], maxLength: 16 }
+              sortOrder: { type: integer }
+    PriorityBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              name: { type: string, maxLength: 64 }
+              color: { type: [string, "null"], maxLength: 16 }
+              weight: { type: integer }
+    NoteBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              title: { type: string, maxLength: 512 }
+              bodyMd: { type: [string, "null"] }
+              pinned: { type: boolean }
+              categoryId: { type: [integer, "null"] }
+              priorityId: { type: [integer, "null"] }
+    TodoBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              title: { type: string, maxLength: 512 }
+              done: { type: boolean }
+              dueAtUTC: { type: [string, "null"], format: date-time }
+              notesMd: { type: [string, "null"] }
+              categoryId: { type: [integer, "null"] }
+              priorityId: { type: [integer, "null"] }
+    CalendarBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              title: { type: string, maxLength: 512 }
+              startAtUTC: { type: string, format: date-time }
+              endAtUTC: { type: [string, "null"], format: date-time }
+              allDay: { type: boolean }
+              location: { type: [string, "null"], maxLength: 255 }
+              descriptionMd: { type: [string, "null"] }
+              rrule: { type: [string, "null"], maxLength: 1024, description: "RFC 5545 RRULE body, e.g. FREQ=WEEKLY;BYDAY=MO" }
+              timezone: { type: [string, "null"], description: "IANA zone the rule was authored in (DST-correct expansion)" }
+              exdatesUTC: { type: array, items: { type: string, format: date-time } }
+              categoryId: { type: [integer, "null"] }
+              priorityId: { type: [integer, "null"] }
+    TemplateItemBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              title: { type: string, maxLength: 512 }
+              categoryId: { type: [integer, "null"] }
+              priorityId: { type: [integer, "null"] }
+              relativeDueDays: { type: [integer, "null"], description: "Due = baseDate + N days; null = no due date" }
+              sortOrder: { type: integer }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    User:
+      type: object
+      required: [id, username, isAdmin]
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        displayName: { type: [string, "null"] }
+        email: { type: [string, "null"] }
+        isAdmin: { type: boolean }
+    AdminUser:
+      allOf:
+        - $ref: "#/components/schemas/User"
+        - type: object
+          properties:
+            lastLoginAtUTC: { type: [string, "null"], format: date-time }
+            createdAtUTC: { type: [string, "null"], format: date-time }
+            archivedAtUTC: { type: [string, "null"], format: date-time }
+    Group:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: [string, "null"] }
+        createdAtUTC: { type: [string, "null"], format: date-time }
+        archivedAtUTC: { type: [string, "null"], format: date-time }
+    GroupMember:
+      type: object
+      required: [id, userId, username]
+      properties:
+        id: { type: integer }
+        userId: { type: integer }
+        username: { type: string }
+        displayName: { type: [string, "null"] }
+    Category:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        color: { type: [string, "null"] }
+        sortOrder: { type: integer }
+        archivedAtUTC: { type: [string, "null"], format: date-time }
+    Priority:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        color: { type: [string, "null"] }
+        weight: { type: integer }
+        archivedAtUTC: { type: [string, "null"], format: date-time }
+    Tag:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        color: { type: [string, "null"] }
+        archivedAtUTC: { type: [string, "null"], format: date-time }
+    ItemBase:
+      type: object
+      required: [id, title, ownerId]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        tagIds: { type: array, items: { type: integer } }
+        ownerId: { type: integer }
+        categoryId: { type: [integer, "null"] }
+        priorityId: { type: [integer, "null"] }
+        createdAtUTC: { type: string, format: date-time }
+        updatedAtUTC: { type: string, format: date-time }
+        archivedAtUTC: { type: [string, "null"], format: date-time }
+    Note:
+      allOf:
+        - $ref: "#/components/schemas/ItemBase"
+        - type: object
+          properties:
+            bodyMd: { type: [string, "null"] }
+            pinned: { type: boolean }
+    Todo:
+      allOf:
+        - $ref: "#/components/schemas/ItemBase"
+        - type: object
+          properties:
+            done: { type: boolean }
+            doneAtUTC: { type: [string, "null"], format: date-time }
+            dueAtUTC: { type: [string, "null"], format: date-time }
+            notesMd: { type: [string, "null"] }
+    CalendarItem:
+      allOf:
+        - $ref: "#/components/schemas/ItemBase"
+        - type: object
+          properties:
+            startAtUTC: { type: string, format: date-time }
+            endAtUTC: { type: [string, "null"], format: date-time }
+            allDay: { type: boolean }
+            location: { type: [string, "null"] }
+            descriptionMd: { type: [string, "null"] }
+            rrule: { type: [string, "null"] }
+            timezone: { type: [string, "null"] }
+            exdatesUTC: { type: array, items: { type: string, format: date-time } }
+    Occurrence:
+      type: object
+      required: [itemId, title, occurrenceStartUTC, recurring]
+      properties:
+        itemId: { type: integer }
+        title: { type: string }
+        occurrenceStartUTC: { type: string, format: date-time }
+        occurrenceEndUTC: { type: [string, "null"], format: date-time }
+        allDay: { type: boolean }
+        recurring: { type: boolean }
+        location: { type: [string, "null"] }
+        ownerId: { type: integer }
+        categoryId: { type: [integer, "null"] }
+        priorityId: { type: [integer, "null"] }
+    ItemRef:
+      type: object
+      required: [id, itemType, title]
+      properties:
+        id: { type: integer }
+        itemType: { type: string, enum: [note, todo, calendar] }
+        title: { type: string }
+    BaseItem:
+      allOf:
+        - $ref: "#/components/schemas/ItemRef"
+        - type: object
+          required: [access]
+          properties:
+            ownerId: { type: integer }
+            categoryId: { type: [integer, "null"] }
+            priorityId: { type: [integer, "null"] }
+            access: { type: string, enum: [owner, edit, view] }
+            createdAtUTC: { type: string, format: date-time }
+            updatedAtUTC: { type: string, format: date-time }
+            archivedAtUTC: { type: [string, "null"], format: date-time }
+    Link:
+      type: object
+      required: [linkId, item]
+      properties:
+        linkId: { type: integer }
+        linkType: { type: [string, "null"] }
+        item: { $ref: "#/components/schemas/ItemRef" }
+    Template:
+      type: object
+      required: [id, name, ownerId]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: [string, "null"] }
+        ownerId: { type: integer }
+        createdAtUTC: { type: string, format: date-time }
+        archivedAtUTC: { type: [string, "null"], format: date-time }
+    TemplateItem:
+      type: object
+      required: [id, templateId, title]
+      properties:
+        id: { type: integer }
+        templateId: { type: integer }
+        title: { type: string }
+        categoryId: { type: [integer, "null"] }
+        priorityId: { type: [integer, "null"] }
+        relativeDueDays: { type: [integer, "null"] }
+        sortOrder: { type: integer }
+    TemplateWithItems:
+      allOf:
+        - $ref: "#/components/schemas/Template"
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/TemplateItem" } }
+    DirectoryUser:
+      type: object
+      required: [id, username]
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        displayName: { type: [string, "null"] }
+    DirectoryGroup:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+    Share:
+      type: object
+      required: [id, level, grantee]
+      properties:
+        id: { type: integer }
+        level: { type: string, enum: [view, edit] }
+        grantee:
+          type: object
+          required: [type, id, name]
+          properties:
+            type: { type: string, enum: [user, group] }
+            id: { type: integer }
+            name: { type: string }
+    Reminder:
+      type: object
+      required: [id, itemId, channels, enabled]
+      properties:
+        id: { type: integer }
+        itemId: { type: integer }
+        createdBy: { type: integer }
+        recipientUserId: { type: [integer, "null"] }
+        remindAtUTC: { type: [string, "null"], format: date-time }
+        offsetMinutes: { type: [integer, "null"] }
+        channels: { type: array, items: { type: string, enum: [email, webhook] } }
+        enabled: { type: boolean }
+        nextFireAtUTC: { type: [string, "null"], format: date-time }
+        archivedAtUTC: { type: [string, "null"], format: date-time }
+    Dispatch:
+      type: object
+      required: [id, occurrenceAtUTC, channel, status, attempt]
+      properties:
+        id: { type: integer }
+        occurrenceAtUTC: { type: string, format: date-time }
+        channel: { type: string, enum: [email, webhook] }
+        status: { type: string, enum: [sent, failed] }
+        attempt: { type: integer }
+        error: { type: [string, "null"] }
+        dispatchedAtUTC: { type: string, format: date-time }
+    SmtpSettings:
+      type: object
+      required: [tls, hasPassword]
+      properties:
+        host: { type: [string, "null"] }
+        port: { type: [integer, "null"] }
+        user: { type: [string, "null"] }
+        from: { type: [string, "null"] }
+        tls: { type: string, enum: [none, starttls, tls] }
+        hasPassword: { type: boolean }
+    WebhookSettings:
+      type: object
+      required: [enabled, hasSecret]
+      properties:
+        url: { type: [string, "null"] }
+        enabled: { type: boolean }
+        hasSecret: { type: boolean }
+
+  responses:
+    Ok:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              ok: { type: boolean }
+    Unauthorized:
+      description: Not authenticated
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Not allowed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Conflict (duplicate among active rows)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unprocessable:
+      description: Validation error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

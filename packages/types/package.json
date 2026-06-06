@@ -1,0 +1,6 @@
+{
+  "name": "@notestodo/types",
+  "version": "0.1.0",
+  "private": true,
+  "types": "api.d.ts"
+}

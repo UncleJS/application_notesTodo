@@ -1,0 +1,25 @@
+# Dependencies / build output
+node_modules/
+dist/
+build/
+coverage/
+*.log
+
+# Env & credentials — .env.example (placeholders only) IS committed
+.env
+.env.*
+!.env.example
+
+# Any config carrying credentials or key material
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+credentials*
+*credentials.json
+secrets*
+*.secret
+
+# Local tooling state
+.claude/settings.local.json

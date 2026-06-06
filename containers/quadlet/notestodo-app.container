@@ -1,0 +1,18 @@
+# Production app unit. Not enabled by default — the dev unit serves the same
+# pod port. To switch: systemctl --user stop notestodo-dev && systemctl --user start notestodo-app
+[Unit]
+Description=NotesTodo app (production)
+After=notestodo-mariadb.service
+
+[Container]
+Image=localhost/notestodo-app:latest
+ContainerName=notestodo-app
+Pod=notestodo-pod.pod
+EnvironmentFile=%h/0_opencode/application_notesTodo/.env
+Environment=APP_ENV=production
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

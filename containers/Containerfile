@@ -1,0 +1,28 @@
+# Production image: Bun serves the API, scheduler, and the built SPA.
+FROM registry.access.redhat.com/ubi10/ubi-minimal AS build
+
+RUN microdnf install -y curl-minimal tar gzip unzip && \
+    microdnf clean all
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:$PATH"
+
+WORKDIR /workspace
+COPY package.json bun.lock ./
+COPY apps/server/package.json apps/server/
+COPY apps/web/package.json apps/web/
+COPY packages/types/package.json packages/types/
+RUN bun install
+COPY . .
+RUN cd apps/web && bun run build
+
+FROM registry.access.redhat.com/ubi10/ubi-minimal
+RUN microdnf install -y curl-minimal tar gzip unzip && \
+    curl -fsSL https://bun.sh/install | bash && \
+    microdnf clean all
+ENV PATH="/root/.bun/bin:$PATH"
+ENV APP_ENV=production
+
+WORKDIR /workspace
+COPY --from=build /workspace /workspace
+
+CMD ["bun", "apps/server/src/index.ts"]

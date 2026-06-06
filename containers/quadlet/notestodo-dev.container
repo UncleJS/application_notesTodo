@@ -1,0 +1,16 @@
+[Unit]
+Description=NotesTodo dev container
+After=notestodo-mariadb.service
+
+[Container]
+Image=localhost/notestodo-dev:latest
+ContainerName=notestodo-dev
+Pod=notestodo-pod.pod
+Volume=notestodo-dev.volume:/workspace:Z
+EnvironmentFile=%h/0_opencode/application_notesTodo/.env
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
