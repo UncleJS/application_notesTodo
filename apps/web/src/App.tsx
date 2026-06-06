@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import LoginPage from "@/features/auth/LoginPage";
 import RequireAuth from "@/features/auth/RequireAuth";
+import { CreateActionProvider } from "@/features/command/CreateActionContext";
 import Layout from "@/components/Layout";
 import AdminPage from "@/pages/AdminPage";
 import NotesPage from "@/pages/NotesPage";
@@ -20,7 +21,9 @@ export default function App() {
         <Route
           element={
             <RequireAuth>
-              <Layout />
+              <CreateActionProvider>
+                <Layout />
+              </CreateActionProvider>
             </RequireAuth>
           }
         >

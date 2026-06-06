@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Users, User } from "lucide-react";
 import { api } from "@/lib/api";
+import { useToast } from "@/components/ui/toast";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 
@@ -24,6 +25,7 @@ interface DirGroup {
 
 export function SharesPanel({ itemId, isOwner }: { itemId: number; isOwner: boolean }) {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const key = ["items", itemId, "shares"];
   const shares = useQuery({
     queryKey: key,
@@ -56,6 +58,12 @@ export function SharesPanel({ itemId, isOwner }: { itemId: number; isOwner: bool
       });
     },
     onSuccess: () => {
+      const name =
+        grantee.startsWith("user-")
+          ? dirUsers.data?.find((u) => `user-${u.id}` === grantee)?.displayName ??
+            dirUsers.data?.find((u) => `user-${u.id}` === grantee)?.username
+          : dirGroups.data?.find((g) => `group-${g.id}` === grantee)?.name;
+      toast({ title: name ? `Shared with ${name}` : "Shared" });
       setGrantee("");
       invalidate();
     },
@@ -63,11 +71,17 @@ export function SharesPanel({ itemId, isOwner }: { itemId: number; isOwner: bool
   const changeLevel = useMutation({
     mutationFn: ({ shareId, newLevel }: { shareId: number; newLevel: "view" | "edit" }) =>
       api(`/api/v1/shares/${shareId}`, { method: "PATCH", json: { level: newLevel } }),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      toast({ title: "Share level updated" });
+      invalidate();
+    },
   });
   const remove = useMutation({
     mutationFn: (shareId: number) => api(`/api/v1/shares/${shareId}`, { method: "DELETE" }),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      toast({ title: "Share removed" });
+      invalidate();
+    },
   });
 
   if (!isOwner) {

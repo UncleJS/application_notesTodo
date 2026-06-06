@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { idParam } from "../lib/params";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { calendarItems, items, notes, todos } from "../db/schema/items";
@@ -157,7 +158,7 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
     },
   )
   .get("/:id", async ({ user, params, set }) => {
-    const tpl = await ownTemplate(user!.id, user!.isAdmin, Number(params.id));
+    const tpl = await ownTemplate(user!.id, user!.isAdmin, idParam(params.id));
     if (!tpl) {
       set.status = 404;
       return { error: "not found" };
@@ -177,7 +178,7 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
   .patch(
     "/:id",
     async ({ user, params, body, set }) => {
-      const tpl = await ownTemplate(user!.id, user!.isAdmin, Number(params.id));
+      const tpl = await ownTemplate(user!.id, user!.isAdmin, idParam(params.id));
       if (!tpl) {
         set.status = 404;
         return { error: "not found" };
@@ -213,7 +214,7 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
     },
   )
   .delete("/:id", async ({ user, params, set }) => {
-    const tpl = await ownTemplate(user!.id, user!.isAdmin, Number(params.id));
+    const tpl = await ownTemplate(user!.id, user!.isAdmin, idParam(params.id));
     if (!tpl) {
       set.status = 404;
       return { error: "not found" };
@@ -225,7 +226,7 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
     return { ok: true };
   })
   .post("/:id/restore", async ({ user, params, set }) => {
-    const tpl = await ownTemplate(user!.id, user!.isAdmin, Number(params.id));
+    const tpl = await ownTemplate(user!.id, user!.isAdmin, idParam(params.id));
     if (!tpl) {
       set.status = 404;
       return { error: "not found" };
@@ -248,7 +249,7 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
   .post(
     "/:id/tags",
     async ({ user, params, body, set }) => {
-      const tpl = await ownTemplate(user!.id, user!.isAdmin, Number(params.id));
+      const tpl = await ownTemplate(user!.id, user!.isAdmin, idParam(params.id));
       if (!tpl) {
         set.status = 404;
         return { error: "not found" };
@@ -292,7 +293,7 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
     { body: t.Object({ tagId: t.Number() }) },
   )
   .delete("/:id/tags/:tagId", async ({ user, params, set }) => {
-    const tpl = await ownTemplate(user!.id, user!.isAdmin, Number(params.id));
+    const tpl = await ownTemplate(user!.id, user!.isAdmin, idParam(params.id));
     if (!tpl) {
       set.status = 404;
       return { error: "not found" };
@@ -303,7 +304,7 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
       .where(
         and(
           eq(templateTags.templateId, tpl.id),
-          eq(templateTags.tagId, Number(params.tagId)),
+          eq(templateTags.tagId, idParam(params.tagId)),
           isNull(templateTags.archivedAtUTC),
         ),
       );
@@ -312,7 +313,7 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
   .post(
     "/:id/items",
     async ({ user, params, body, set }) => {
-      const tpl = await ownTemplate(user!.id, user!.isAdmin, Number(params.id));
+      const tpl = await ownTemplate(user!.id, user!.isAdmin, idParam(params.id));
       if (!tpl) {
         set.status = 404;
         return { error: "not found" };
@@ -358,12 +359,12 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
   .patch(
     "/:id/items/:itemId",
     async ({ user, params, body, set }) => {
-      const tpl = await ownTemplate(user!.id, user!.isAdmin, Number(params.id));
+      const tpl = await ownTemplate(user!.id, user!.isAdmin, idParam(params.id));
       if (!tpl) {
         set.status = 404;
         return { error: "not found" };
       }
-      const itemId = Number(params.itemId);
+      const itemId = idParam(params.itemId);
       await db
         .update(templateItems)
         .set({
@@ -434,7 +435,7 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
     { body: t.Object({ ...templateItemBody, title: t.Optional(t.String({ minLength: 1, maxLength: 512 })) }) },
   )
   .delete("/:id/items/:itemId", async ({ user, params, set }) => {
-    const tpl = await ownTemplate(user!.id, user!.isAdmin, Number(params.id));
+    const tpl = await ownTemplate(user!.id, user!.isAdmin, idParam(params.id));
     if (!tpl) {
       set.status = 404;
       return { error: "not found" };
@@ -442,13 +443,13 @@ export const templateRoutes = new Elysia({ prefix: "/api/v1/templates" })
     await db
       .update(templateItems)
       .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
-      .where(and(eq(templateItems.id, Number(params.itemId)), eq(templateItems.templateId, tpl.id)));
+      .where(and(eq(templateItems.id, idParam(params.itemId)), eq(templateItems.templateId, tpl.id)));
     return { ok: true };
   })
   .post(
     "/:id/instantiate",
     async ({ user, params, body, set }) => {
-      const tpl = await ownTemplate(user!.id, user!.isAdmin, Number(params.id));
+      const tpl = await ownTemplate(user!.id, user!.isAdmin, idParam(params.id));
       if (!tpl || tpl.archivedAtUTC) {
         set.status = 404;
         return { error: "not found" };

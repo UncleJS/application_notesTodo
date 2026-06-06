@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { idParam } from "../lib/params";
 import { eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { sessions, users } from "../db/schema/auth";
@@ -69,7 +70,7 @@ export const adminUserRoutes = new Elysia({ prefix: "/api/v1/admin/users" })
   .patch(
     "/:id",
     async ({ params, body, set }) => {
-      const id = Number(params.id);
+      const id = idParam(params.id);
       await db
         .update(users)
         .set({
@@ -98,7 +99,7 @@ export const adminUserRoutes = new Elysia({ prefix: "/api/v1/admin/users" })
     "/:id/reset-password",
     async ({ params, body }) => {
       const passwordHash = await Bun.password.hash(body.password);
-      const id = Number(params.id);
+      const id = idParam(params.id);
       await db.update(users).set({ passwordHash, updatedAtUTC: nowUtcSql() }).where(eq(users.id, id));
       await db.delete(sessions).where(eq(sessions.userId, id)); // force re-login
       return { ok: true };
@@ -106,7 +107,7 @@ export const adminUserRoutes = new Elysia({ prefix: "/api/v1/admin/users" })
     { body: t.Object({ password: t.String({ minLength: 4 }) }) },
   )
   .delete("/:id", async ({ params, user, set }) => {
-    const id = Number(params.id);
+    const id = idParam(params.id);
     if (id === user!.id) {
       set.status = 400;
       return { error: "cannot archive yourself" };
@@ -116,7 +117,7 @@ export const adminUserRoutes = new Elysia({ prefix: "/api/v1/admin/users" })
     return { ok: true };
   })
   .post("/:id/restore", async ({ params, set }) => {
-    const id = Number(params.id);
+    const id = idParam(params.id);
     try {
       await db.update(users).set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() }).where(eq(users.id, id));
     } catch (err: unknown) {

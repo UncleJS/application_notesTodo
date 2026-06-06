@@ -396,6 +396,7 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/NoteBody" }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Note" } } } }
+        "422": { $ref: "#/components/responses/Unprocessable" }
   /api/v1/notes/{id}:
     get:
       tags: [notes]
@@ -414,6 +415,7 @@ paths:
       responses:
         "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Note" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
     delete:
       tags: [notes]
       summary: Archive note (owner)
@@ -451,6 +453,7 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/TodoBody" }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Todo" } } } }
+        "422": { $ref: "#/components/responses/Unprocessable" }
   /api/v1/todos/{id}:
     get:
       tags: [todos]
@@ -468,6 +471,7 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/TodoBody" }
       responses:
         "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Todo" } } } }
+        "422": { $ref: "#/components/responses/Unprocessable" }
     delete:
       tags: [todos]
       summary: Archive todo (owner)
@@ -475,6 +479,41 @@ paths:
       parameters: [{ $ref: "#/components/parameters/Id" }]
       responses:
         "200": { $ref: "#/components/responses/Ok" }
+  /api/v1/todos/bulk:
+    post:
+      tags: [todos]
+      summary: Bulk operation on todos (per-id access enforced; failures are skipped, not fatal)
+      operationId: bulkTodos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids, op]
+              properties:
+                ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200 }
+                op: { type: string, enum: [done, archive, addTag] }
+                tagId: { type: integer, description: "Required when op=addTag" }
+      responses:
+        "200":
+          description: Per-item outcome
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updated, skipped]
+                properties:
+                  updated: { type: integer }
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, reason]
+                      properties:
+                        id: { type: integer }
+                        reason: { type: string }
+        "422": { $ref: "#/components/responses/Unprocessable" }
   /api/v1/todos/{id}/toggle:
     post:
       tags: [todos]
@@ -521,6 +560,7 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/CalendarBody" }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarItem" } } } }
+        "422": { $ref: "#/components/responses/Unprocessable" }
   /api/v1/calendar/items/{id}:
     get:
       tags: [calendar]
@@ -538,6 +578,7 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/CalendarBody" }
       responses:
         "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/CalendarItem" } } } }
+        "422": { $ref: "#/components/responses/Unprocessable" }
     delete:
       tags: [calendar]
       summary: Archive calendar item (owner)
@@ -857,6 +898,7 @@ paths:
                 level: { type: string, enum: [view, edit] }
       responses:
         "201": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/shares/{id}:
     patch:

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, ListTodo, CalendarDays } from "lucide-react";
+import { typeIcon } from "@/features/links/itemIcons";
 import { api } from "@/lib/api";
+import { useToast } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -18,14 +19,9 @@ interface SearchResult {
   title: string;
 }
 
-const typeIcon = {
-  note: FileText,
-  todo: ListTodo,
-  calendar: CalendarDays,
-};
-
 export function LinksPanel({ itemId, canEdit = true }: { itemId: number; canEdit?: boolean }) {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const key = ["items", itemId, "links"];
   const links = useQuery({
     queryKey: key,
@@ -44,12 +40,16 @@ export function LinksPanel({ itemId, canEdit = true }: { itemId: number; canEdit
       api(`/api/v1/items/${itemId}/links`, { method: "POST", json: { toItemId } }),
     onSuccess: () => {
       setQ("");
+      toast({ title: "Item linked" });
       void qc.invalidateQueries({ queryKey: key });
     },
   });
   const removeLink = useMutation({
     mutationFn: (linkId: number) => api(`/api/v1/links/${linkId}`, { method: "DELETE" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: key }),
+    onSuccess: () => {
+      toast({ title: "Link removed" });
+      void qc.invalidateQueries({ queryKey: key });
+    },
   });
 
   const linkedIds = new Set(links.data?.map((l) => l.item.id) ?? []);

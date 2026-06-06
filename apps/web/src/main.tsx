@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ToastProvider } from "@/components/ui/toast";
 import { clearSessionToken, setUnauthorizedHandler } from "@/lib/api";
 import App from "./App";
 import "./index.css";
@@ -23,7 +24,9 @@ setUnauthorizedHandler(() => {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </QueryClientProvider>
   </StrictMode>,
 );

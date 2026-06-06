@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { idParam } from "../lib/params";
 import { and, asc, desc, eq, inArray, isNull, like } from "drizzle-orm";
 import { db } from "../db/client";
 import { items, todos } from "../db/schema/items";
@@ -6,6 +7,7 @@ import { itemTags } from "../db/schema/linksTags";
 import { requireAuth } from "../middleware/auth";
 import { atLeast, getItemAccess, visibleItemsCond } from "../services/itemAccess";
 import { tagIdsByItem } from "../services/tags";
+import { invalidLookupIds } from "../services/lookups";
 import { itemIdsWithLinks } from "../services/links";
 import { isoToSql, nowUtcSql, sqlToIso } from "../lib/time";
 
@@ -90,6 +92,11 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
   .post(
     "/",
     async ({ user, body, set }) => {
+      const badLookups = await invalidLookupIds(body);
+      if (badLookups.length) {
+        set.status = 422;
+        return { error: `unknown ${badLookups.join(", ")}` };
+      }
       const id = await db.transaction(async (tx) => {
         const [res] = await tx.insert(items).values({
           itemType: "todo",
@@ -124,7 +131,7 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
     },
   )
   .get("/:id", async ({ user, params, set }) => {
-    const id = Number(params.id);
+    const id = idParam(params.id);
     const access = await getItemAccess(user!, id);
     if (!atLeast(access, "view")) {
       set.status = access === null ? 404 : 403;
@@ -142,11 +149,16 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
   .patch(
     "/:id",
     async ({ user, params, body, set }) => {
-      const id = Number(params.id);
+      const id = idParam(params.id);
       const access = await getItemAccess(user!, id);
       if (!atLeast(access, "edit")) {
         set.status = access === null ? 404 : 403;
         return { error: access === null ? "not found" : "forbidden" };
+      }
+      const badLookups = await invalidLookupIds(body);
+      if (badLookups.length) {
+        set.status = 422;
+        return { error: `unknown ${badLookups.join(", ")}` };
       }
       await db.transaction(async (tx) => {
         await tx
@@ -186,7 +198,7 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
     },
   )
   .post("/:id/toggle", async ({ user, params, set }) => {
-    const id = Number(params.id);
+    const id = idParam(params.id);
     const access = await getItemAccess(user!, id);
     if (!atLeast(access, "edit")) {
       set.status = access === null ? 404 : 403;
@@ -207,7 +219,7 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
     return todoDto(updated.items, updated.todos);
   })
   .delete("/:id", async ({ user, params, set }) => {
-    const id = Number(params.id);
+    const id = idParam(params.id);
     const access = await getItemAccess(user!, id);
     if (access !== "owner") {
       set.status = access === null ? 404 : 403;
@@ -217,7 +229,7 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
     return { ok: true };
   })
   .post("/:id/restore", async ({ user, params, set }) => {
-    const id = Number(params.id);
+    const id = idParam(params.id);
     const access = await getItemAccess(user!, id);
     if (access !== "owner") {
       set.status = access === null ? 404 : 403;

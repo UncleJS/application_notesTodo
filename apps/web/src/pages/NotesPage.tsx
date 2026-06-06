@@ -1,9 +1,15 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, Pin } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatLocal } from "@/lib/formatLocal";
+import { makeOptimistic } from "@/lib/optimistic";
+import { getDefaults } from "@/lib/itemDefaults";
+import { useRegisterCreateAction } from "@/features/command/CreateActionContext";
+import { QueryError } from "@/components/QueryError";
+import { SkeletonGrid } from "@/components/Skeleton";
+import { FiltersBar } from "@/components/FiltersBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -31,6 +37,7 @@ export default function NotesPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [filters, setFilters] = useState({ category: "", priority: "", tag: "" });
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const categories = useCategories();
   const priorities = usePriorities();
   const tags = useTags();
@@ -48,8 +55,22 @@ export default function NotesPage() {
   });
 
   const createNote = useMutation({
-    mutationFn: () => api<Note>("/api/v1/notes", { method: "POST", json: { title: "Untitled note" } }),
+    mutationFn: () =>
+      api<Note>("/api/v1/notes", {
+        method: "POST",
+        json: { title: "Untitled note", ...getDefaults("note") },
+      }),
     onSuccess: (note) => navigate(`/notes/${note.id}`),
+  });
+
+  useRegisterCreateAction(() => createNote.mutate());
+
+  const togglePin = useMutation({
+    mutationFn: ({ id, pinned }: { id: number; pinned: boolean }) =>
+      api<Note>(`/api/v1/notes/${id}`, { method: "PATCH", json: { pinned } }),
+    ...makeOptimistic<Note, { id: number; pinned: boolean }>(qc, [["notes"]], (n, vars) =>
+      n.id === vars.id ? { ...n, pinned: vars.pinned } : n,
+    ),
   });
 
   return (
@@ -63,8 +84,9 @@ export default function NotesPage() {
           placeholder="Search…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          className="ml-auto w-56"
+          className="ml-auto w-40 sm:w-56"
         />
+        <FiltersBar badge={[filters.category, filters.priority, filters.tag].filter(Boolean).length}>
         <Select
           className="w-36"
           value={filters.category}
@@ -105,6 +127,7 @@ export default function NotesPage() {
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
           Show archived
         </label>
+        </FiltersBar>
       </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {notes.data?.map((n) => (
@@ -114,7 +137,18 @@ export default function NotesPage() {
             className={`flex flex-col gap-1.5 rounded-lg border border-border bg-card p-3 hover:border-ring ${n.archivedAtUTC ? "opacity-60" : ""}`}
           >
             <div className="flex items-center gap-1.5">
-              {n.pinned && <Pin className="h-3.5 w-3.5 shrink-0 text-foreground" />}
+              <button
+                type="button"
+                title={n.pinned ? "Unpin" : "Pin"}
+                className={`shrink-0 ${n.pinned ? "text-foreground" : "text-foreground/40 hover:text-foreground"}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  togglePin.mutate({ id: n.id, pinned: !n.pinned });
+                }}
+              >
+                <Pin className={`h-3.5 w-3.5 ${n.pinned ? "fill-current" : ""}`} />
+              </button>
               <span className="truncate font-medium text-foreground">{n.title}</span>
               {n.hasLinks && <Link2 className="h-3.5 w-3.5 shrink-0 text-foreground" aria-label="Has linked items" />}
             </div>
@@ -126,8 +160,17 @@ export default function NotesPage() {
             </div>
           </Link>
         ))}
-        {notes.data?.length === 0 && <p className="text-sm text-foreground">No notes.</p>}
+        {notes.data?.length === 0 && (
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-foreground">No notes.</p>
+            <Button size="sm" variant="outline" onClick={() => createNote.mutate()}>
+              Create your first note
+            </Button>
+          </div>
+        )}
       </div>
+      {notes.isLoading && <SkeletonGrid />}
+      {notes.isError && <QueryError error={notes.error} onRetry={() => void notes.refetch()} />}
     </div>
   );
 }

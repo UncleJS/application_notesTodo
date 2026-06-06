@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { idParam } from "../lib/params";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { groupMembers, groups, users } from "../db/schema/auth";
@@ -59,7 +60,7 @@ export const adminGroupRoutes = new Elysia({ prefix: "/api/v1/admin/groups" })
   .patch(
     "/:id",
     async ({ params, body, set }) => {
-      const id = Number(params.id);
+      const id = idParam(params.id);
       await db
         .update(groups)
         .set({
@@ -86,7 +87,7 @@ export const adminGroupRoutes = new Elysia({ prefix: "/api/v1/admin/groups" })
     await db
       .update(groups)
       .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
-      .where(eq(groups.id, Number(params.id)));
+      .where(eq(groups.id, idParam(params.id)));
     return { ok: true };
   })
   .post("/:id/restore", async ({ params, set }) => {
@@ -94,7 +95,7 @@ export const adminGroupRoutes = new Elysia({ prefix: "/api/v1/admin/groups" })
       await db
         .update(groups)
         .set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() })
-        .where(eq(groups.id, Number(params.id)));
+        .where(eq(groups.id, idParam(params.id)));
     } catch (err: unknown) {
       if (isDupEntry(err)) {
         set.status = 409;
@@ -114,13 +115,13 @@ export const adminGroupRoutes = new Elysia({ prefix: "/api/v1/admin/groups" })
       })
       .from(groupMembers)
       .innerJoin(users, eq(groupMembers.userId, users.id))
-      .where(and(eq(groupMembers.groupId, Number(params.id)), isNull(groupMembers.archivedAtUTC)));
+      .where(and(eq(groupMembers.groupId, idParam(params.id)), isNull(groupMembers.archivedAtUTC)));
     return rows;
   })
   .post(
     "/:id/members",
     async ({ params, body, set }) => {
-      const groupId = Number(params.id);
+      const groupId = idParam(params.id);
       // restore an archived membership if one exists, else insert
       const existing = (
         await db
@@ -160,8 +161,8 @@ export const adminGroupRoutes = new Elysia({ prefix: "/api/v1/admin/groups" })
       .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
       .where(
         and(
-          eq(groupMembers.groupId, Number(params.id)),
-          eq(groupMembers.userId, Number(params.userId)),
+          eq(groupMembers.groupId, idParam(params.id)),
+          eq(groupMembers.userId, idParam(params.userId)),
           isNull(groupMembers.archivedAtUTC),
         ),
       );

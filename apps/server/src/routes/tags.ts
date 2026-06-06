@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { idParam } from "../lib/params";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { itemTags, tags } from "../db/schema/linksTags";
@@ -72,7 +73,7 @@ export const tagRoutes = new Elysia({ prefix: "/api/v1/tags" })
             ...(body.color !== undefined ? { color: body.color } : {}),
             updatedAtUTC: nowUtcSql(),
           })
-          .where(eq(tags.id, Number(params.id)));
+          .where(eq(tags.id, idParam(params.id)));
       } catch (err) {
         if (isDupEntry(err)) {
           set.status = 409;
@@ -80,7 +81,7 @@ export const tagRoutes = new Elysia({ prefix: "/api/v1/tags" })
         }
         throw err;
       }
-      const row = (await db.select().from(tags).where(eq(tags.id, Number(params.id))))[0];
+      const row = (await db.select().from(tags).where(eq(tags.id, idParam(params.id))))[0];
       if (!row) {
         set.status = 404;
         return { error: "not found" };
@@ -98,7 +99,7 @@ export const tagRoutes = new Elysia({ prefix: "/api/v1/tags" })
     await db
       .update(tags)
       .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
-      .where(eq(tags.id, Number(params.id)));
+      .where(eq(tags.id, idParam(params.id)));
     return { ok: true };
   })
   .post("/:id/restore", async ({ params, set }) => {
@@ -106,7 +107,7 @@ export const tagRoutes = new Elysia({ prefix: "/api/v1/tags" })
       await db
         .update(tags)
         .set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() })
-        .where(eq(tags.id, Number(params.id)));
+        .where(eq(tags.id, idParam(params.id)));
     } catch (err) {
       if (isDupEntry(err)) {
         set.status = 409;
@@ -122,7 +123,7 @@ export const itemTagRoutes = new Elysia({ prefix: "/api/v1/items" })
   .post(
     "/:id/tags",
     async ({ user, params, body, set }) => {
-      const itemId = Number(params.id);
+      const itemId = idParam(params.id);
       const access = await getItemAccess(user!, itemId);
       if (!atLeast(access, "edit")) {
         set.status = access === null ? 404 : 403;
@@ -162,7 +163,7 @@ export const itemTagRoutes = new Elysia({ prefix: "/api/v1/items" })
     { body: t.Object({ tagId: t.Number() }) },
   )
   .delete("/:id/tags/:tagId", async ({ user, params, set }) => {
-    const itemId = Number(params.id);
+    const itemId = idParam(params.id);
     const access = await getItemAccess(user!, itemId);
     if (!atLeast(access, "edit")) {
       set.status = access === null ? 404 : 403;
@@ -174,7 +175,7 @@ export const itemTagRoutes = new Elysia({ prefix: "/api/v1/items" })
       .where(
         and(
           eq(itemTags.itemId, itemId),
-          eq(itemTags.tagId, Number(params.tagId)),
+          eq(itemTags.tagId, idParam(params.tagId)),
           isNull(itemTags.archivedAtUTC),
         ),
       );

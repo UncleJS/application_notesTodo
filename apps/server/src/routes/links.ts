@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { idParam } from "../lib/params";
 import { and, eq, isNull, like, or } from "drizzle-orm";
 import { db } from "../db/client";
 import { items } from "../db/schema/items";
@@ -28,7 +29,7 @@ export const itemRoutes = new Elysia({ prefix: "/api/v1/items" })
   )
   // generic base item — used by the item detail page header
   .get("/:id", async ({ user, params, set }) => {
-    const id = Number(params.id);
+    const id = idParam(params.id);
     const access = await getItemAccess(user!, id);
     if (!atLeast(access, "view")) {
       set.status = access === null ? 404 : 403;
@@ -53,7 +54,7 @@ export const itemRoutes = new Elysia({ prefix: "/api/v1/items" })
     };
   })
   .get("/:id/links", async ({ user, params, set }) => {
-    const id = Number(params.id);
+    const id = idParam(params.id);
     const access = await getItemAccess(user!, id);
     if (!atLeast(access, "view")) {
       set.status = access === null ? 404 : 403;
@@ -94,7 +95,7 @@ export const itemRoutes = new Elysia({ prefix: "/api/v1/items" })
   .post(
     "/:id/links",
     async ({ user, params, body, set }) => {
-      const fromId = Number(params.id);
+      const fromId = idParam(params.id);
       const toId = body.toItemId;
       if (fromId === toId) {
         set.status = 400;
@@ -158,7 +159,7 @@ export const itemRoutes = new Elysia({ prefix: "/api/v1/items" })
 export const linkRoutes = new Elysia({ prefix: "/api/v1/links" })
   .use(requireAuth)
   .delete("/:id", async ({ user, params, set }) => {
-    const linkId = Number(params.id);
+    const linkId = idParam(params.id);
     const row = (await db.select().from(itemLinks).where(eq(itemLinks.id, linkId)))[0];
     if (!row) {
       set.status = 404;

@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { idParam } from "../lib/params";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { calendarExdates, calendarItems, items } from "../db/schema/items";
@@ -62,7 +63,7 @@ const channelsSchema = t.Array(t.Union([t.Literal("email"), t.Literal("webhook")
 export const reminderRoutes = new Elysia({ prefix: "/api/v1" })
   .use(requireAuth)
   .get("/items/:id/reminders", async ({ user, params, set }) => {
-    const itemId = Number(params.id);
+    const itemId = idParam(params.id);
     const access = await getItemAccess(user!, itemId);
     if (!atLeast(access, "view")) {
       set.status = access === null ? 404 : 403;
@@ -77,7 +78,7 @@ export const reminderRoutes = new Elysia({ prefix: "/api/v1" })
   .post(
     "/items/:id/reminders",
     async ({ user, params, body, set }) => {
-      const itemId = Number(params.id);
+      const itemId = idParam(params.id);
       const access = await getItemAccess(user!, itemId);
       if (!atLeast(access, "view")) {
         set.status = access === null ? 404 : 403;
@@ -120,7 +121,7 @@ export const reminderRoutes = new Elysia({ prefix: "/api/v1" })
   .patch(
     "/reminders/:id",
     async ({ user, params, body, set }) => {
-      const r = (await db.select().from(reminders).where(eq(reminders.id, Number(params.id))))[0];
+      const r = (await db.select().from(reminders).where(eq(reminders.id, idParam(params.id))))[0];
       if (!r) {
         set.status = 404;
         return { error: "not found" };
@@ -170,7 +171,7 @@ export const reminderRoutes = new Elysia({ prefix: "/api/v1" })
     },
   )
   .delete("/reminders/:id", async ({ user, params, set }) => {
-    const r = (await db.select().from(reminders).where(eq(reminders.id, Number(params.id))))[0];
+    const r = (await db.select().from(reminders).where(eq(reminders.id, idParam(params.id))))[0];
     if (!r) {
       set.status = 404;
       return { error: "not found" };
@@ -187,7 +188,7 @@ export const reminderRoutes = new Elysia({ prefix: "/api/v1" })
     return { ok: true };
   })
   .get("/reminders/:id/dispatches", async ({ user, params, set }) => {
-    const r = (await db.select().from(reminders).where(eq(reminders.id, Number(params.id))))[0];
+    const r = (await db.select().from(reminders).where(eq(reminders.id, idParam(params.id))))[0];
     if (!r) {
       set.status = 404;
       return { error: "not found" };

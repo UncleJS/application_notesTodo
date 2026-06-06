@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { idParam } from "../lib/params";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { groups, users } from "../db/schema/auth";
@@ -29,7 +30,7 @@ export const directoryRoutes = new Elysia({ prefix: "/api/v1/directory" })
 export const shareRoutes = new Elysia({ prefix: "/api/v1" })
   .use(requireAuth)
   .get("/items/:id/shares", async ({ user, params, set }) => {
-    const itemId = Number(params.id);
+    const itemId = idParam(params.id);
     const access = await getItemAccess(user!, itemId);
     if (access !== "owner") {
       set.status = access === null ? 404 : 403;
@@ -60,7 +61,7 @@ export const shareRoutes = new Elysia({ prefix: "/api/v1" })
   .post(
     "/items/:id/shares",
     async ({ user, params, body, set }) => {
-      const itemId = Number(params.id);
+      const itemId = idParam(params.id);
       const access = await getItemAccess(user!, itemId);
       if (access !== "owner") {
         set.status = access === null ? 404 : 403;
@@ -69,6 +70,23 @@ export const shareRoutes = new Elysia({ prefix: "/api/v1" })
       if (body.granteeType === "user" && body.granteeId === user!.id) {
         set.status = 400;
         return { error: "cannot share with yourself" };
+      }
+      // validate the grantee exists and is active before touching item_shares
+      const grantee =
+        body.granteeType === "user"
+          ? await db
+              .select({ id: users.id })
+              .from(users)
+              .where(and(eq(users.id, body.granteeId), isNull(users.archivedAtUTC)))
+              .limit(1)
+          : await db
+              .select({ id: groups.id })
+              .from(groups)
+              .where(and(eq(groups.id, body.granteeId), isNull(groups.archivedAtUTC)))
+              .limit(1);
+      if (!grantee.length) {
+        set.status = 404;
+        return { error: body.granteeType === "user" ? "user not found" : "group not found" };
       }
       const granteeCol = body.granteeType === "user" ? itemShares.userId : itemShares.groupId;
       // restore an archived grant for this grantee if present, else insert
@@ -115,7 +133,7 @@ export const shareRoutes = new Elysia({ prefix: "/api/v1" })
   .patch(
     "/shares/:id",
     async ({ user, params, body, set }) => {
-      const share = (await db.select().from(itemShares).where(eq(itemShares.id, Number(params.id))))[0];
+      const share = (await db.select().from(itemShares).where(eq(itemShares.id, idParam(params.id))))[0];
       if (!share) {
         set.status = 404;
         return { error: "not found" };
@@ -134,7 +152,7 @@ export const shareRoutes = new Elysia({ prefix: "/api/v1" })
     { body: t.Object({ level: t.Union([t.Literal("view"), t.Literal("edit")]) }) },
   )
   .delete("/shares/:id", async ({ user, params, set }) => {
-    const share = (await db.select().from(itemShares).where(eq(itemShares.id, Number(params.id))))[0];
+    const share = (await db.select().from(itemShares).where(eq(itemShares.id, idParam(params.id))))[0];
     if (!share) {
       set.status = 404;
       return { error: "not found" };

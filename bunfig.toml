@@ -1,0 +1,4 @@
+# Test preload must run before any test file imports db/client.ts (the pool
+# reads DB_NAME at import time) so tests always hit the dedicated test DB.
+[test]
+preload = ["./apps/server/src/test/preload.ts"]

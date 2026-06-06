@@ -26,7 +26,11 @@ export const settingsRoutes = new Elysia({ prefix: "/api/v1/settings" })
   })
   .put(
     "/smtp",
-    async ({ body }) => {
+    async ({ body, set }) => {
+      if (body.host !== null && !body.host.trim()) {
+        set.status = 422;
+        return { error: "host must not be blank" };
+      }
       await db
         .update(settings)
         .set({
@@ -47,7 +51,7 @@ export const settingsRoutes = new Elysia({ prefix: "/api/v1/settings" })
     {
       body: t.Object({
         host: t.Nullable(t.String({ maxLength: 255 })),
-        port: t.Nullable(t.Number()),
+        port: t.Nullable(t.Number({ minimum: 1, maximum: 65535 })),
         user: t.Optional(t.Nullable(t.String({ maxLength: 255 }))),
         password: t.Optional(t.Nullable(t.String({ maxLength: 255 }))),
         from: t.Nullable(t.String({ maxLength: 255 })),
@@ -62,6 +66,10 @@ export const settingsRoutes = new Elysia({ prefix: "/api/v1/settings" })
       if (!cfg) {
         set.status = 422;
         return { error: "SMTP is not configured — save host, port and from first" };
+      }
+      if (!cfg.host.trim() || !Number.isInteger(cfg.port) || cfg.port < 1 || cfg.port > 65535) {
+        set.status = 422;
+        return { error: "SMTP config is invalid — check host and port (1-65535)" };
       }
       const to = body.to || user!.email;
       if (!to) {

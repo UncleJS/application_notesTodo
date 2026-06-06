@@ -445,6 +445,23 @@ export interface paths {
         patch: operations["updateTodo"];
         trace?: never;
     };
+    "/api/v1/todos/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk operation on todos (per-id access enforced; failures are skipped, not fatal) */
+        post: operations["bulkTodos"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/todos/{id}/toggle": {
         parameters: {
             query?: never;
@@ -2037,6 +2054,7 @@ export interface operations {
                     "application/json": components["schemas"]["Note"];
                 };
             };
+            422: components["responses"]["Unprocessable"];
         };
     };
     getNote: {
@@ -2097,6 +2115,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     restoreNote: {
@@ -2158,6 +2177,7 @@ export interface operations {
                     "application/json": components["schemas"]["Todo"];
                 };
             };
+            422: components["responses"]["Unprocessable"];
         };
     };
     getTodo: {
@@ -2217,6 +2237,44 @@ export interface operations {
                     "application/json": components["schemas"]["Todo"];
                 };
             };
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    bulkTodos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    ids: number[];
+                    /** @enum {string} */
+                    op: "done" | "archive" | "addTag";
+                    /** @description Required when op=addTag */
+                    tagId?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Per-item outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        updated: number;
+                        skipped: {
+                            id: number;
+                            reason: string;
+                        }[];
+                    };
+                };
+            };
+            422: components["responses"]["Unprocessable"];
         };
     };
     toggleTodo: {
@@ -2322,6 +2380,7 @@ export interface operations {
                     "application/json": components["schemas"]["CalendarItem"];
                 };
             };
+            422: components["responses"]["Unprocessable"];
         };
     };
     getCalendarItem: {
@@ -2381,6 +2440,7 @@ export interface operations {
                     "application/json": components["schemas"]["CalendarItem"];
                 };
             };
+            422: components["responses"]["Unprocessable"];
         };
     };
     restoreCalendarItem: {
@@ -2964,6 +3024,7 @@ export interface operations {
         };
         responses: {
             201: components["responses"]["Ok"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
     };

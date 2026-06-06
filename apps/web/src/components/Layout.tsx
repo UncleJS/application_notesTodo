@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { Menu, X } from "lucide-react";
+import { Menu, Search, X } from "lucide-react";
 import { useMe, useLogout } from "@/features/auth/useMe";
+import { CommandPalette } from "@/features/command/CommandPalette";
+import { useGlobalShortcuts } from "@/features/command/useGlobalShortcuts";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +21,9 @@ export default function Layout() {
   const logout = useLogout();
   // Mobile: sidebar is off-canvas and toggled from the top bar; md+ always visible.
   const [open, setOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
+  useGlobalShortcuts(openPalette);
 
   const linkCls = ({ isActive }: { isActive: boolean }) =>
     cn(
@@ -34,6 +39,9 @@ export default function Layout() {
           <Menu className="h-5 w-5" />
         </Button>
         <span className="text-lg font-bold text-foreground">NotesTodo</span>
+        <Button variant="ghost" size="icon" aria-label="Search" className="ml-auto" onClick={openPalette}>
+          <Search className="h-5 w-5" />
+        </Button>
       </header>
 
       {/* Backdrop (mobile, menu open) */}
@@ -66,6 +74,15 @@ export default function Layout() {
             <X className="h-5 w-5" />
           </Button>
         </div>
+        <button
+          type="button"
+          onClick={openPalette}
+          className="mb-3 flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-sm text-foreground/70 hover:bg-accent hover:text-foreground"
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span className="flex-1 text-left">Search…</span>
+          <kbd className="rounded border border-border px-1 text-[10px]">⌘K</kbd>
+        </button>
         <nav className="flex flex-col gap-0.5">
           {navItems.map((item) => (
             <NavLink
@@ -95,6 +112,7 @@ export default function Layout() {
       <main className="min-w-0 flex-1 p-4 md:p-6">
         <Outlet />
       </main>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }

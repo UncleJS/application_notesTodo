@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { onAppError } from "./lib/onError";
 import { docs } from "./docs";
 import { health } from "./routes/health";
 import { authRoutes } from "./routes/auth";
@@ -7,6 +8,7 @@ import { adminGroupRoutes } from "./routes/admin-groups";
 import { categoryRoutes, priorityRoutes, statusRoutes } from "./routes/lookups";
 import { noteRoutes } from "./routes/notes";
 import { todoRoutes } from "./routes/todos";
+import { bulkRoutes } from "./routes/bulk";
 import { calendarRoutes } from "./routes/calendar";
 import { itemTagRoutes, tagRoutes } from "./routes/tags";
 import { itemRoutes, linkRoutes } from "./routes/links";
@@ -20,19 +22,7 @@ import { pruneExpiredSessions } from "./services/session";
 const port = Number(process.env.APP_PORT ?? 8080);
 
 const app = new Elysia()
-  .onError(({ code, error, set }) => {
-    if (code === "VALIDATION") {
-      set.status = 422;
-      return { error: "validation failed" };
-    }
-    if (code === "NOT_FOUND") {
-      set.status = 404;
-      return { error: "not found" };
-    }
-    console.error(error);
-    set.status = 500;
-    return { error: "internal error" };
-  })
+  .onError(onAppError)
   .use(docs)
   .use(health)
   .use(authRoutes)
@@ -43,6 +33,7 @@ const app = new Elysia()
   .use(statusRoutes)
   .use(noteRoutes)
   .use(todoRoutes)
+  .use(bulkRoutes)
   .use(calendarRoutes)
   .use(tagRoutes)
   .use(itemTagRoutes)

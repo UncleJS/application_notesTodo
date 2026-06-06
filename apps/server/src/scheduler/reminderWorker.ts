@@ -60,6 +60,11 @@ async function processReminder(r: typeof reminders.$inferSelect): Promise<void> 
   }
   const recipientId = r.recipientUserId ?? r.createdBy;
   const recipient = (await db.select().from(users).where(eq(users.id, recipientId)))[0];
+  if (!recipient || recipient.archivedAtUTC) {
+    // recipient gone or archived — disable instead of dispatching into the void
+    await db.update(reminders).set({ enabled: false, updatedAtUTC: nowUtcSql() }).where(eq(reminders.id, r.id));
+    return;
+  }
 
   // occurrence this firing refers to: next_fire + offset (offset null → the remind time itself)
   const occurrence = new Date(sqlToDate(r.nextFireAtUTC).getTime() + (r.offsetMinutes ?? 0) * 60_000);

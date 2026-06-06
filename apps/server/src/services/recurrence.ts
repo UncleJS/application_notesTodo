@@ -60,6 +60,21 @@ export function buildRule(rruleText: string, startAtUTC: Date, timezone: string 
   return new RRule(parsed);
 }
 
+/**
+ * Validate an RRULE string before storage. RFC 5545 requires FREQ.
+ * Returns an error message, or null when the rule is usable.
+ */
+export function rruleError(rruleText: string, startAtUTC: Date, timezone: string | null): string | null {
+  try {
+    const parsed = RRule.parseString(rruleText);
+    if (parsed.freq === undefined) return "rrule must include FREQ";
+    buildRule(rruleText, startAtUTC, timezone);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : "invalid rrule";
+  }
+}
+
 export function expandOccurrences(input: ExpandInput): Occurrence[] {
   const durationMs = input.endAtUTC ? input.endAtUTC.getTime() - input.startAtUTC.getTime() : 0;
   const max = input.maxOccurrences ?? 500;

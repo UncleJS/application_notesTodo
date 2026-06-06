@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Pin, Repeat } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatLocal } from "@/lib/formatLocal";
+import { QueryError } from "@/components/QueryError";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Note } from "./NotesPage";
 import type { Todo } from "./TodosPage";
@@ -67,6 +68,7 @@ export default function DashboardPage() {
               </Link>
             ))}
             {todos.data?.length === 0 && <p className="text-sm text-foreground">Nothing open. 🎉</p>}
+            {todos.isError && <QueryError error={todos.error} onRetry={() => void todos.refetch()} />}
           </CardContent>
         </Card>
         <Card>
@@ -88,6 +90,7 @@ export default function DashboardPage() {
               </Link>
             ))}
             {events.data?.length === 0 && <p className="text-sm text-foreground">No upcoming events.</p>}
+            {events.isError && <QueryError error={events.error} onRetry={() => void events.refetch()} />}
           </CardContent>
         </Card>
         <Card>
@@ -106,6 +109,7 @@ export default function DashboardPage() {
               </Link>
             ))}
             {pinned.length === 0 && <p className="text-sm text-foreground">No pinned notes.</p>}
+            {notes.isError && <QueryError error={notes.error} onRetry={() => void notes.refetch()} />}
           </CardContent>
         </Card>
       </div>

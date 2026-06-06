@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { idParam } from "../lib/params";
 import { asc, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { categories, priorities, statuses } from "../db/schema/lookups";
@@ -78,7 +79,7 @@ function makeLookupRoutes(
               ...extraFields.pick(body as Record<string, unknown>),
               updatedAtUTC: nowUtcSql(),
             } as never)
-            .where(eq(table.id, Number(params.id)));
+            .where(eq(table.id, idParam(params.id)));
         } catch (err) {
           if (isDupEntry(err)) {
             set.status = 409;
@@ -86,7 +87,7 @@ function makeLookupRoutes(
           }
           throw err;
         }
-        const row = (await db.select().from(table).where(eq(table.id, Number(params.id))))[0];
+        const row = (await db.select().from(table).where(eq(table.id, idParam(params.id))))[0];
         if (!row) {
           set.status = 404;
           return { error: "not found" };
@@ -104,7 +105,7 @@ function makeLookupRoutes(
       await db
         .update(table)
         .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() } as never)
-        .where(eq(table.id, Number(params.id)));
+        .where(eq(table.id, idParam(params.id)));
       return { ok: true };
     })
     .post("/:id/restore", async ({ params, set }) => {
@@ -112,7 +113,7 @@ function makeLookupRoutes(
         await db
           .update(table)
           .set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() } as never)
-          .where(eq(table.id, Number(params.id)));
+          .where(eq(table.id, idParam(params.id)));
       } catch (err) {
         if (isDupEntry(err)) {
           set.status = 409;

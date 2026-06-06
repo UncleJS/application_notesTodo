@@ -4,6 +4,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckSquare, ChevronLeft, ChevronRight, Link2, Repeat, Square } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatLocal } from "@/lib/formatLocal";
+import { getDefaults, rememberDefaults } from "@/lib/itemDefaults";
+import { useToast } from "@/components/ui/toast";
+import { useRegisterCreateAction } from "@/features/command/CreateActionContext";
+import { QueryError } from "@/components/QueryError";
+import { SkeletonList } from "@/components/Skeleton";
+import { FiltersBar } from "@/components/FiltersBar";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +21,8 @@ import { CategorySelect, LookupBadges, PrioritySelect } from "@/features/lookups
 import { useCategories, usePriorities } from "@/features/lookups/useLookups";
 import { useTags } from "@/features/tags/useTags";
 import { RecurrenceEditor } from "@/features/calendar/RecurrenceEditor";
+import { TagPicker } from "@/features/tags/TagPicker";
+import { LinkChips } from "@/features/links/LinkChips";
 import { TodoDialog, type Todo, type TodoForm } from "@/pages/TodosPage";
 import { cn } from "@/lib/utils";
 
@@ -105,7 +113,11 @@ function weekStart(d: Date): Date {
 
 export default function CalendarPage() {
   const qc = useQueryClient();
-  const [view, setView] = useState<"month" | "week" | "list">("month");
+  const { toast } = useToast();
+  // narrow screens default to the list view — month cells are unusable on phones
+  const [view, setView] = useState<"month" | "week" | "list">(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches ? "list" : "month",
+  );
   const [anchor, setAnchor] = useState(() => new Date());
   const [form, setForm] = useState<CalForm | null>(null);
   const [todoForm, setTodoForm] = useState<TodoForm | null>(null);
@@ -113,6 +125,15 @@ export default function CalendarPage() {
   const categories = useCategories();
   const priorities = usePriorities();
   const tags = useTags();
+
+  useRegisterCreateAction(() => setForm({ ...emptyForm, ...getDefaults("calendar") }));
+
+  // fresh copy while editing so the embedded tag panel stays current
+  const freshItem = useQuery({
+    queryKey: ["calendar", "item", form?.id],
+    queryFn: () => api<CalendarItem>(`/api/v1/calendar/items/${form!.id}`),
+    enabled: !!form?.id,
+  });
 
   const catColor = (id: number | null) =>
     (id !== null ? categories.data?.find((c) => c.id === id)?.color : null) ?? null;
@@ -222,15 +243,10 @@ export default function CalendarPage() {
         ? api<CalendarItem>(`/api/v1/calendar/items/${f.id}`, { method: "PATCH", json })
         : api<CalendarItem>("/api/v1/calendar/items", { method: "POST", json });
     },
-    onSuccess: () => {
+    onSuccess: (_data, f) => {
       invalidate();
-      setForm(null);
-    },
-  });
-  const archive = useMutation({
-    mutationFn: (id: number) => api(`/api/v1/calendar/items/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      invalidate();
+      rememberDefaults("calendar", { categoryId: f.categoryId, priorityId: f.priorityId });
+      toast({ title: f.id ? "Event saved" : "Event created" });
       setForm(null);
     },
   });
@@ -238,6 +254,19 @@ export default function CalendarPage() {
     mutationFn: (id: number) => api(`/api/v1/calendar/items/${id}/restore`, { method: "POST" }),
     onSuccess: () => {
       invalidate();
+      toast({ title: "Event restored" });
+      setForm(null);
+    },
+  });
+  const archive = useMutation({
+    mutationFn: (id: number) => api(`/api/v1/calendar/items/${id}`, { method: "DELETE" }),
+    onSuccess: (_data, id) => {
+      invalidate();
+      toast({
+        title: "Event archived",
+        description: "It can be restored at any time.",
+        action: { label: "Undo", onClick: () => restore.mutate(id) },
+      });
       setForm(null);
     },
   });
@@ -306,7 +335,7 @@ export default function CalendarPage() {
           onClick={() => {
             const start = new Date(d);
             start.setHours(9, 0, 0, 0);
-            setForm({ ...emptyForm, startAtUTC: start.toISOString() });
+            setForm({ ...emptyForm, ...getDefaults("calendar"), startAtUTC: start.toISOString() });
           }}
         >
           {d.getDate()}
@@ -345,9 +374,13 @@ export default function CalendarPage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-bold text-foreground">Calendar</h1>
-        <Button size="sm" onClick={() => setForm(emptyForm)}>
+        <Button size="sm" onClick={() => setForm({ ...emptyForm, ...getDefaults("calendar") })}>
           New event
         </Button>
+        <FiltersBar
+          align="start"
+          badge={[filters.kind, filters.category, filters.priority, filters.tag].filter(Boolean).length}
+        >
         <Select
           className="w-28"
           value={filters.kind}
@@ -393,6 +426,7 @@ export default function CalendarPage() {
             </option>
           ))}
         </Select>
+        </FiltersBar>
         <div className="ml-auto flex items-center gap-2">
           <Button size="icon" variant="ghost" onClick={() => shift(-1)}>
             <ChevronLeft className="h-4 w-4" />
@@ -462,9 +496,11 @@ export default function CalendarPage() {
               />
             </li>
           ))}
+          {occurrences.isLoading && <SkeletonList />}
           {occurrences.data?.length === 0 && <p className="py-4 text-sm text-foreground">No events in range.</p>}
         </ul>
       )}
+      {occurrences.isError && <QueryError error={occurrences.error} onRetry={() => void occurrences.refetch()} />}
 
       <TodoDialog
         form={todoForm}
@@ -557,6 +593,22 @@ export default function CalendarPage() {
                   className="min-h-20"
                 />
               </div>
+              {form.id && (
+                <div className="flex flex-col gap-1.5">
+                  <Label>Tags</Label>
+                  <TagPicker
+                    itemId={form.id}
+                    tagIds={freshItem.data?.tagIds ?? []}
+                    invalidateKeys={[["calendar"]]}
+                  />
+                </div>
+              )}
+              {form.id && (
+                <div className="flex flex-col gap-1.5">
+                  <Label>Linked items</Label>
+                  <LinkChips itemId={form.id} />
+                </div>
+              )}
               {save.isError && <p className="text-sm text-destructive">{(save.error as Error).message}</p>}
               <div className="flex items-center gap-2">
                 <Button type="submit" disabled={!form.title || !form.startAtUTC || save.isPending}>

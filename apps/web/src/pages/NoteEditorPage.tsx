@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pin, PinOff } from "lucide-react";
 import { api } from "@/lib/api";
+import { useToast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +19,7 @@ export default function NoteEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const me = useMe();
 
   const note = useQuery({
@@ -36,25 +38,45 @@ export default function NoteEditorPage() {
     }
   }, [note.data, dirty]);
 
+  const noteKey = ["notes", Number(id)];
   const patch = useMutation({
     mutationFn: (json: Record<string, unknown>) => api<Note>(`/api/v1/notes/${id}`, { method: "PATCH", json }),
-    onSuccess: (updated) => {
-      qc.setQueryData(["notes", Number(id)], updated);
+    // optimistic: merge the patch into the cached note, roll back on error
+    onMutate: async (json) => {
+      await qc.cancelQueries({ queryKey: noteKey });
+      const prev = qc.getQueryData<Note>(noteKey);
+      if (prev) qc.setQueryData(noteKey, { ...prev, ...json });
+      return { prev };
+    },
+    onError: (_err, _json, ctx) => {
+      if (ctx?.prev) qc.setQueryData(noteKey, ctx.prev);
+    },
+    onSuccess: (updated, json) => {
+      qc.setQueryData(noteKey, updated);
       void qc.invalidateQueries({ queryKey: ["notes"], exact: false });
       setDirty(false);
+      if ("title" in json || "bodyMd" in json) toast({ title: "Note saved" });
     },
   });
 
+  const restore = useMutation({
+    mutationFn: () => api(`/api/v1/notes/${id}/restore`, { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["notes"], exact: false });
+      toast({ title: "Note restored" });
+    },
+  });
   const archive = useMutation({
     mutationFn: () => api(`/api/v1/notes/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["notes"], exact: false });
+      toast({
+        title: "Note archived",
+        description: "It can be restored at any time.",
+        action: { label: "Undo", onClick: () => restore.mutate() },
+      });
       navigate("/notes");
     },
-  });
-  const restore = useMutation({
-    mutationFn: () => api(`/api/v1/notes/${id}/restore`, { method: "POST" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["notes"], exact: false }),
   });
 
   if (note.isLoading) return <p className="text-foreground">Loading…</p>;

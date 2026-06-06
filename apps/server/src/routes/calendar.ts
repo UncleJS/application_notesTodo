@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { idParam } from "../lib/params";
 import { and, asc, eq, gte, inArray, isNull, like, lt } from "drizzle-orm";
 import { db } from "../db/client";
 import { calendarExdates, calendarItems, items, todos } from "../db/schema/items";
@@ -8,7 +9,8 @@ import { itemIdsWithLinks } from "../services/links";
 import { requireAuth } from "../middleware/auth";
 import { atLeast, getItemAccess, visibleItemsCond } from "../services/itemAccess";
 import { isoToSql, nowUtcSql, sqlToDate, sqlToIso } from "../lib/time";
-import { expandOccurrences } from "../services/recurrence";
+import { expandOccurrences, rruleError } from "../services/recurrence";
+import { invalidLookupIds } from "../services/lookups";
 
 export function calendarDto(
   item: typeof items.$inferSelect,
@@ -272,6 +274,18 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
   .post(
     "/items",
     async ({ user, body, set }) => {
+      if (body.rrule) {
+        const err = rruleError(body.rrule, new Date(body.startAtUTC), body.timezone ?? null);
+        if (err) {
+          set.status = 422;
+          return { error: `invalid recurrence rule: ${err}` };
+        }
+      }
+      const badLookups = await invalidLookupIds(body);
+      if (badLookups.length) {
+        set.status = 422;
+        return { error: `unknown ${badLookups.join(", ")}` };
+      }
       const id = await db.transaction(async (tx) => {
         const [res] = await tx.insert(items).values({
           itemType: "calendar",
@@ -306,7 +320,7 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
     { body: calendarBody },
   )
   .get("/items/:id", async ({ user, params, set }) => {
-    const id = Number(params.id);
+    const id = idParam(params.id);
     const access = await getItemAccess(user!, id);
     if (!atLeast(access, "view")) {
       set.status = access === null ? 404 : 403;
@@ -323,11 +337,31 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
   .patch(
     "/items/:id",
     async ({ user, params, body, set }) => {
-      const id = Number(params.id);
+      const id = idParam(params.id);
       const access = await getItemAccess(user!, id);
       if (!atLeast(access, "edit")) {
         set.status = access === null ? 404 : 403;
         return { error: access === null ? "not found" : "forbidden" };
+      }
+      if (body.rrule) {
+        // validate against the effective start/timezone (body value or stored value)
+        const existing = await loadCalendarItem(id);
+        if (!existing) {
+          set.status = 404;
+          return { error: "not found" };
+        }
+        const start = body.startAtUTC ? new Date(body.startAtUTC) : sqlToDate(existing.calendar_items.startAtUTC);
+        const tz = body.timezone !== undefined ? body.timezone : existing.calendar_items.timezone;
+        const err = rruleError(body.rrule, start, tz);
+        if (err) {
+          set.status = 422;
+          return { error: `invalid recurrence rule: ${err}` };
+        }
+      }
+      const badLookups = await invalidLookupIds(body);
+      if (badLookups.length) {
+        set.status = 422;
+        return { error: `unknown ${badLookups.join(", ")}` };
       }
       await db.transaction(async (tx) => {
         await tx
@@ -380,7 +414,7 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
     },
   )
   .delete("/items/:id", async ({ user, params, set }) => {
-    const id = Number(params.id);
+    const id = idParam(params.id);
     const access = await getItemAccess(user!, id);
     if (access !== "owner") {
       set.status = access === null ? 404 : 403;
@@ -390,7 +424,7 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
     return { ok: true };
   })
   .post("/items/:id/restore", async ({ user, params, set }) => {
-    const id = Number(params.id);
+    const id = idParam(params.id);
     const access = await getItemAccess(user!, id);
     if (access !== "owner") {
       set.status = access === null ? 404 : 403;
