@@ -124,7 +124,7 @@ export default function CalendarPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   // narrow screens default to the list view — month cells are unusable on phones
-  const [view, setView] = useState<"month" | "week" | "list">(() =>
+  const [view, setView] = useState<"month" | "week" | "day" | "list">(() =>
     typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches ? "list" : "month",
   );
   const [anchor, setAnchor] = useState(() => new Date());
@@ -162,6 +162,12 @@ export default function CalendarPage() {
       const start = weekStart(first);
       const end = new Date(start);
       end.setDate(end.getDate() + 42);
+      return { from: start, to: end };
+    }
+    if (view === "day") {
+      const start = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
       return { from: start, to: end };
     }
     const start = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
@@ -306,6 +312,7 @@ export default function CalendarPage() {
   function shift(direction: 1 | -1) {
     const next = new Date(anchor);
     if (view === "month") next.setMonth(next.getMonth() + direction);
+    else if (view === "day") next.setDate(next.getDate() + direction);
     else next.setDate(next.getDate() + direction * 7);
     setAnchor(next);
   }
@@ -333,7 +340,10 @@ export default function CalendarPage() {
   }, [anchor]);
 
   const todayKey = localDayKey(new Date().toISOString());
-  const monthLabel = anchor.toLocaleDateString(undefined, { year: "numeric", month: "long" });
+  const rangeLabel =
+    view === "day"
+      ? anchor.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })
+      : anchor.toLocaleDateString(undefined, { year: "numeric", month: "long" });
 
   function dayCell(d: Date, compact: boolean) {
     const key = localDayKey(d.toISOString());
@@ -344,16 +354,22 @@ export default function CalendarPage() {
       <div
         key={key}
         className={cn(
-          "flex min-h-20 flex-col gap-0.5 border border-border/50 p-1",
+          "flex min-h-20 cursor-pointer flex-col gap-0.5 border border-border/50 p-1",
           !inMonth && compact && "opacity-50",
           key === todayKey && "bg-accent/30",
         )}
+        title="Open day view"
+        onClick={() => {
+          setAnchor(new Date(d));
+          setView("day");
+        }}
       >
         <button
           type="button"
           className="self-start rounded px-1 text-xs font-medium text-foreground hover:bg-accent"
           title="New event on this day"
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             const start = new Date(d);
             start.setHours(9, 0, 0, 0);
             setForm({ ...emptyForm, ...getDefaults("calendar"), startAtUTC: start.toISOString() });
@@ -373,7 +389,10 @@ export default function CalendarPage() {
                 ...(cat ? { borderLeftColor: cat } : {}),
                 ...(pri ? { borderRightColor: pri } : {}),
               }}
-              onClick={() => void openOccurrence(o)}
+              onClick={(e) => {
+                e.stopPropagation();
+                void openOccurrence(o);
+              }}
             >
               {!o.allDay && <span className="shrink-0 font-mono">{localTime(o.occurrenceStartUTC)}</span>}
               {o.kind === "todo" &&
@@ -452,7 +471,7 @@ export default function CalendarPage() {
           <Button size="icon" variant="ghost" onClick={() => shift(-1)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="w-40 text-center text-sm font-medium text-foreground">{monthLabel}</span>
+          <span className="min-w-40 text-center text-sm font-medium text-foreground">{rangeLabel}</span>
           <Button size="icon" variant="ghost" onClick={() => shift(1)}>
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -463,13 +482,14 @@ export default function CalendarPage() {
             <TabsList>
               <TabsTrigger value="month">Month</TabsTrigger>
               <TabsTrigger value="week">Week</TabsTrigger>
+              <TabsTrigger value="day">Day</TabsTrigger>
               <TabsTrigger value="list">List</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
       </div>
 
-      {view !== "list" && (
+      {(view === "month" || view === "week") && (
         <div className="grid grid-cols-7 text-center text-xs font-medium text-foreground">
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
             <div key={d} className="py-1">
@@ -494,7 +514,7 @@ export default function CalendarPage() {
           ))}
         </div>
       )}
-      {view === "list" && (
+      {(view === "list" || view === "day") && (
         <ul className="flex flex-col">
           {occList?.map((o, i) => (
             <li
@@ -532,7 +552,11 @@ export default function CalendarPage() {
             </li>
           ))}
           {occurrences.isLoading && <SkeletonList />}
-          {occList?.length === 0 && <p className="py-4 text-sm text-foreground">No events in range.</p>}
+          {occList?.length === 0 && (
+            <p className="py-4 text-sm text-foreground">
+              {view === "day" ? "No events on this day." : "No events in range."}
+            </p>
+          )}
         </ul>
       )}
       {occurrences.isError && <QueryError error={occurrences.error} onRetry={() => void occurrences.refetch()} />}
