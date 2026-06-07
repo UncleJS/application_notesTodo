@@ -59,6 +59,17 @@ export function TagPicker({
 
   const available = tags.data?.filter((t) => !tagIds.includes(t.id)) ?? [];
 
+  const submitNewTag = () => {
+    const name = newName.trim();
+    if (!name) return;
+    createTag.mutate(name, {
+      onSuccess: (tag) => {
+        setNewName("");
+        attach.mutate(tag.id);
+      },
+    });
+  };
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-1.5">
@@ -104,31 +115,32 @@ export function TagPicker({
               ))}
             </Select>
           )}
-          <form
-            className="flex items-center gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const name = newName.trim();
-              if (!name) return;
-              createTag.mutate(name, {
-                onSuccess: (tag) => {
-                  setNewName("");
-                  attach.mutate(tag.id);
-                },
-              });
-            }}
-          >
+          {/* not a <form>: TagPicker renders inside dialog forms, and nested
+              forms bubble submit into the outer form (saving/closing the dialog) */}
+          <div className="flex items-center gap-1.5">
             <Input
               placeholder="New tag"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submitNewTag();
+                }
+              }}
               className="h-8 w-28 text-xs"
             />
-            <Button type="submit" size="sm" variant="outline" disabled={!newName.trim()}>
+            <Button type="button" size="sm" variant="outline" disabled={!newName.trim()} onClick={submitNewTag}>
               +
             </Button>
-          </form>
+          </div>
         </div>
+      )}
+      {createTag.isError && (
+        <p className="text-xs text-destructive">{(createTag.error as Error).message}</p>
+      )}
+      {attach.isError && (
+        <p className="text-xs text-destructive">{(attach.error as Error).message}</p>
       )}
     </div>
   );
