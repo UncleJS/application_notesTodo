@@ -30,6 +30,7 @@ tags:
   - name: shares
   - name: reminders
   - name: settings
+  - name: audit
 
 paths:
   /api/v1/health:
@@ -1091,6 +1092,47 @@ paths:
         "422": { $ref: "#/components/responses/Unprocessable" }
         "502": { description: Request failed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
+  /api/v1/audit-logs:
+    get:
+      tags: [audit]
+      summary: Audit log of items you changed or own
+      description: |
+        Append-only history of item changes (who, what field, old → new, when).
+        Returns rows where you are the actor OR you own the item. Newest first.
+      operationId: listAuditLogs
+      parameters:
+        - { name: itemType, in: query, required: false, schema: { type: string, enum: [note, todo, calendar] } }
+        - { name: action, in: query, required: false, schema: { $ref: "#/components/schemas/AuditAction" } }
+        - { name: category, in: query, required: false, schema: { type: integer }, description: "Snapshot category id" }
+        - { name: priority, in: query, required: false, schema: { type: integer }, description: "Snapshot priority id" }
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200 } }
+      responses:
+        "200": { description: Audit log page, content: { application/json: { schema: { $ref: "#/components/schemas/AuditLogPage" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/admin/audit-logs:
+    get:
+      tags: [audit, admin]
+      summary: Audit log of all items (admin)
+      description: All item changes across every user, with an extra `userId` (actor) filter. Newest first.
+      operationId: listAdminAuditLogs
+      parameters:
+        - { name: userId, in: query, required: false, schema: { type: integer }, description: "Filter by actor user id" }
+        - { name: itemType, in: query, required: false, schema: { type: string, enum: [note, todo, calendar] } }
+        - { name: action, in: query, required: false, schema: { $ref: "#/components/schemas/AuditAction" } }
+        - { name: category, in: query, required: false, schema: { type: integer } }
+        - { name: priority, in: query, required: false, schema: { type: integer } }
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200 } }
+      responses:
+        "200": { description: Audit log page, content: { application/json: { schema: { $ref: "#/components/schemas/AuditLogPage" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
 components:
   parameters:
     Id:
@@ -1430,6 +1472,46 @@ components:
         url: { type: [string, "null"] }
         enabled: { type: boolean }
         hasSecret: { type: boolean }
+    AuditAction:
+      type: string
+      enum:
+        [create, update, archive, restore, tag_add, tag_remove, link_add, link_remove, share_grant, share_revoke, share_update]
+    AuditChange:
+      type: object
+      required: [field, old, new]
+      properties:
+        field: { type: string }
+        old: { description: "Previous value (any JSON type, or null)" }
+        new: { description: "New value (any JSON type, or null)" }
+    AuditLog:
+      type: object
+      required: [id, itemId, itemType, actorUserId, action, createdAtUTC]
+      properties:
+        id: { type: integer }
+        itemId: { type: integer }
+        itemType: { type: string, enum: [note, todo, calendar] }
+        itemTitle: { type: [string, "null"], description: "Null if the item no longer exists" }
+        actorUserId: { type: integer }
+        actorUsername: { type: [string, "null"] }
+        actorDisplayName: { type: [string, "null"] }
+        action: { $ref: "#/components/schemas/AuditAction" }
+        changes:
+          oneOf:
+            - type: array
+              items: { $ref: "#/components/schemas/AuditChange" }
+            - type: "null"
+          description: "Field-level diffs for `update`; null for create/archive/restore"
+        categoryId: { type: [integer, "null"] }
+        priorityId: { type: [integer, "null"] }
+        createdAtUTC: { type: string, format: date-time }
+    AuditLogPage:
+      type: object
+      required: [logs, total, page, limit]
+      properties:
+        logs: { type: array, items: { $ref: "#/components/schemas/AuditLog" } }
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
 
   responses:
     Ok:

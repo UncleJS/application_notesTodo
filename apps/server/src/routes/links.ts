@@ -7,6 +7,7 @@ import { itemLinks } from "../db/schema/linksTags";
 import { requireAuth } from "../middleware/auth";
 import { atLeast, getItemAccess, visibleItemsCond } from "../services/itemAccess";
 import { isDupEntry } from "../lib/dbErrors";
+import { itemAuditMeta, recordAudit } from "../services/audit";
 import { nowUtcSql, sqlToIso } from "../lib/time";
 
 export const itemRoutes = new Elysia({ prefix: "/api/v1/items" })
@@ -123,21 +124,35 @@ export const itemRoutes = new Elysia({ prefix: "/api/v1/items" })
             ),
           )
       ).find((r) => r.archivedAtUTC !== null);
+      const meta = await itemAuditMeta(fromId);
       try {
-        if (archived) {
-          await db
-            .update(itemLinks)
-            .set({ archivedAtUTC: null, linkType: body.linkType ?? null, updatedAtUTC: nowUtcSql() })
-            .where(eq(itemLinks.id, archived.id));
-        } else {
-          await db.insert(itemLinks).values({
-            fromItemId: fromId,
-            toItemId: toId,
-            linkType: body.linkType ?? null,
-            createdAtUTC: nowUtcSql(),
-            updatedAtUTC: nowUtcSql(),
-          });
-        }
+        await db.transaction(async (tx) => {
+          if (archived) {
+            await tx
+              .update(itemLinks)
+              .set({ archivedAtUTC: null, linkType: body.linkType ?? null, updatedAtUTC: nowUtcSql() })
+              .where(eq(itemLinks.id, archived.id));
+          } else {
+            await tx.insert(itemLinks).values({
+              fromItemId: fromId,
+              toItemId: toId,
+              linkType: body.linkType ?? null,
+              createdAtUTC: nowUtcSql(),
+              updatedAtUTC: nowUtcSql(),
+            });
+          }
+          if (meta) {
+            await recordAudit(tx, {
+              itemId: fromId,
+              itemType: meta.itemType,
+              actorUserId: user!.id,
+              action: "link_add",
+              changes: [{ field: "toItemId", old: null, new: toId }],
+              categoryId: meta.categoryId,
+              priorityId: meta.priorityId,
+            });
+          }
+        });
       } catch (err) {
         if (isDupEntry(err)) {
           set.status = 409;
@@ -171,9 +186,23 @@ export const linkRoutes = new Elysia({ prefix: "/api/v1/links" })
       set.status = 403;
       return { error: "forbidden" };
     }
-    await db
-      .update(itemLinks)
-      .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
-      .where(eq(itemLinks.id, linkId));
+    const meta = await itemAuditMeta(row.fromItemId);
+    await db.transaction(async (tx) => {
+      await tx
+        .update(itemLinks)
+        .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
+        .where(eq(itemLinks.id, linkId));
+      if (meta) {
+        await recordAudit(tx, {
+          itemId: row.fromItemId,
+          itemType: meta.itemType,
+          actorUserId: user!.id,
+          action: "link_remove",
+          changes: [{ field: "toItemId", old: row.toItemId, new: null }],
+          categoryId: meta.categoryId,
+          priorityId: meta.priorityId,
+        });
+      }
+    });
     return { ok: true };
   });

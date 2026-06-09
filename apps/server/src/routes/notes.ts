@@ -9,6 +9,7 @@ import { atLeast, getItemAccess, isStaleItem, visibleItemsCond } from "../servic
 import { tagIdsByItem } from "../services/tags";
 import { invalidLookupIds } from "../services/lookups";
 import { itemIdsWithLinks } from "../services/links";
+import { diffFields, recordAudit } from "../services/audit";
 import { nowUtcSql, sqlToIso } from "../lib/time";
 
 function noteDto(item: typeof items.$inferSelect, note: typeof notes.$inferSelect, tagIds: number[] = []) {
@@ -114,6 +115,14 @@ export const noteRoutes = new Elysia({ prefix: "/api/v1/notes" })
           bodyMd: body.bodyMd ?? null,
           pinned: body.pinned ?? false,
         });
+        await recordAudit(tx, {
+          itemId: res.insertId,
+          itemType: "note",
+          actorUserId: user!.id,
+          action: "create",
+          categoryId: body.categoryId ?? null,
+          priorityId: body.priorityId ?? null,
+        });
         return res.insertId;
       });
       const row = (await loadNote(id))!;
@@ -155,6 +164,24 @@ export const noteRoutes = new Elysia({ prefix: "/api/v1/notes" })
         set.status = 422;
         return { error: `unknown ${badLookups.join(", ")}` };
       }
+      const before = (await loadNote(id))!;
+      const next: Record<string, unknown> = {};
+      if (body.title !== undefined) next.title = body.title;
+      if (body.categoryId !== undefined) next.categoryId = body.categoryId;
+      if (body.priorityId !== undefined) next.priorityId = body.priorityId;
+      if (body.bodyMd !== undefined) next.bodyMd = body.bodyMd;
+      if (body.pinned !== undefined) next.pinned = body.pinned;
+      const changes = diffFields(
+        {
+          title: before.items.title,
+          categoryId: before.items.categoryId,
+          priorityId: before.items.priorityId,
+          bodyMd: before.notes.bodyMd,
+          pinned: before.notes.pinned,
+        },
+        next,
+        ["title", "categoryId", "priorityId", "bodyMd", "pinned"],
+      );
       await db.transaction(async (tx) => {
         await tx
           .update(items)
@@ -174,6 +201,15 @@ export const noteRoutes = new Elysia({ prefix: "/api/v1/notes" })
             })
             .where(eq(notes.itemId, id));
         }
+        await recordAudit(tx, {
+          itemId: id,
+          itemType: "note",
+          actorUserId: user!.id,
+          action: "update",
+          changes,
+          categoryId: body.categoryId !== undefined ? body.categoryId : before.items.categoryId,
+          priorityId: body.priorityId !== undefined ? body.priorityId : before.items.priorityId,
+        });
       });
       const row = (await loadNote(id))!;
       return noteDto(row.items, row.notes);
@@ -197,7 +233,21 @@ export const noteRoutes = new Elysia({ prefix: "/api/v1/notes" })
       set.status = access === null ? 404 : 403;
       return { error: access === null ? "not found" : "only the owner can archive" };
     }
-    await db.update(items).set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() }).where(eq(items.id, id));
+    const before = (await db.select().from(items).where(eq(items.id, id)).limit(1))[0]!;
+    await db.transaction(async (tx) => {
+      await tx
+        .update(items)
+        .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
+        .where(eq(items.id, id));
+      await recordAudit(tx, {
+        itemId: id,
+        itemType: "note",
+        actorUserId: user!.id,
+        action: "archive",
+        categoryId: before.categoryId,
+        priorityId: before.priorityId,
+      });
+    });
     return { ok: true };
   })
   .post("/:id/restore", async ({ user, params, set }) => {
@@ -207,6 +257,20 @@ export const noteRoutes = new Elysia({ prefix: "/api/v1/notes" })
       set.status = access === null ? 404 : 403;
       return { error: access === null ? "not found" : "only the owner can restore" };
     }
-    await db.update(items).set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() }).where(eq(items.id, id));
+    const before = (await db.select().from(items).where(eq(items.id, id)).limit(1))[0]!;
+    await db.transaction(async (tx) => {
+      await tx
+        .update(items)
+        .set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() })
+        .where(eq(items.id, id));
+      await recordAudit(tx, {
+        itemId: id,
+        itemType: "note",
+        actorUserId: user!.id,
+        action: "restore",
+        categoryId: before.categoryId,
+        priorityId: before.priorityId,
+      });
+    });
     return { ok: true };
   });

@@ -17,6 +17,7 @@ const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const ItemDetailPage = lazy(() => import("@/pages/ItemDetailPage"));
 const TemplatesPage = lazy(() => import("@/pages/TemplatesPage"));
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
+const AuditLogPage = lazy(() => import("@/pages/AuditLogPage"));
 
 const page = (el: React.ReactNode) => <Suspense fallback={<SkeletonList rows={4} />}>{el}</Suspense>;
 
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/calendar" element={page(<CalendarPage />)} />
           <Route path="/items/:id" element={page(<ItemDetailPage />)} />
           <Route path="/templates" element={page(<TemplatesPage />)} />
+          <Route path="/activity" element={page(<AuditLogPage />)} />
           <Route path="/settings" element={page(<SettingsPage />)} />
           <Route path="/admin" element={page(<AdminPage />)} />
         </Route>

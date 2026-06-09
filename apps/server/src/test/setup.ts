@@ -48,6 +48,7 @@ export async function ensureTestDb(): Promise<void> {
 /** Empty every data table (keeps _migrations). Run in beforeEach for isolation. */
 export async function truncateAll(): Promise<void> {
   const tables = [
+    "audit_logs",
     "reminder_dispatch",
     "reminders",
     "item_shares",

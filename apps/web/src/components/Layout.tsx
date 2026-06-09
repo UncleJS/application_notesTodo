@@ -13,6 +13,7 @@ const navItems = [
   { to: "/todos", label: "Todos" },
   { to: "/calendar", label: "Calendar" },
   { to: "/templates", label: "Templates" },
+  { to: "/activity", label: "Activity" },
   { to: "/settings", label: "Settings" },
 ];
 

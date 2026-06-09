@@ -6,6 +6,7 @@ import { itemTags, tags } from "../db/schema/linksTags";
 import { requireAdmin, requireAuth } from "../middleware/auth";
 import { atLeast, getItemAccess } from "../services/itemAccess";
 import { isDupEntry } from "../lib/dbErrors";
+import { itemAuditMeta, recordAudit } from "../services/audit";
 import { nowUtcSql, sqlToIso } from "../lib/time";
 
 function tagDto(r: typeof tags.$inferSelect) {
@@ -136,20 +137,34 @@ export const itemTagRoutes = new Elysia({ prefix: "/api/v1/items" })
           .from(itemTags)
           .where(and(eq(itemTags.itemId, itemId), eq(itemTags.tagId, body.tagId)))
       ).find((r) => r.archivedAtUTC !== null);
+      const meta = await itemAuditMeta(itemId);
       try {
-        if (archived) {
-          await db
-            .update(itemTags)
-            .set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() })
-            .where(eq(itemTags.id, archived.id));
-        } else {
-          await db.insert(itemTags).values({
-            itemId,
-            tagId: body.tagId,
-            createdAtUTC: nowUtcSql(),
-            updatedAtUTC: nowUtcSql(),
-          });
-        }
+        await db.transaction(async (tx) => {
+          if (archived) {
+            await tx
+              .update(itemTags)
+              .set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() })
+              .where(eq(itemTags.id, archived.id));
+          } else {
+            await tx.insert(itemTags).values({
+              itemId,
+              tagId: body.tagId,
+              createdAtUTC: nowUtcSql(),
+              updatedAtUTC: nowUtcSql(),
+            });
+          }
+          if (meta) {
+            await recordAudit(tx, {
+              itemId,
+              itemType: meta.itemType,
+              actorUserId: user!.id,
+              action: "tag_add",
+              changes: [{ field: "tagId", old: null, new: body.tagId }],
+              categoryId: meta.categoryId,
+              priorityId: meta.priorityId,
+            });
+          }
+        });
       } catch (err) {
         if (isDupEntry(err)) {
           set.status = 409;
@@ -169,15 +184,26 @@ export const itemTagRoutes = new Elysia({ prefix: "/api/v1/items" })
       set.status = access === null ? 404 : 403;
       return { error: access === null ? "not found" : "forbidden" };
     }
-    await db
-      .update(itemTags)
-      .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
-      .where(
-        and(
-          eq(itemTags.itemId, itemId),
-          eq(itemTags.tagId, idParam(params.tagId)),
-          isNull(itemTags.archivedAtUTC),
-        ),
-      );
+    const tagId = idParam(params.tagId);
+    const meta = await itemAuditMeta(itemId);
+    await db.transaction(async (tx) => {
+      await tx
+        .update(itemTags)
+        .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
+        .where(
+          and(eq(itemTags.itemId, itemId), eq(itemTags.tagId, tagId), isNull(itemTags.archivedAtUTC)),
+        );
+      if (meta) {
+        await recordAudit(tx, {
+          itemId,
+          itemType: meta.itemType,
+          actorUserId: user!.id,
+          action: "tag_remove",
+          changes: [{ field: "tagId", old: tagId, new: null }],
+          categoryId: meta.categoryId,
+          priorityId: meta.priorityId,
+        });
+      }
+    });
     return { ok: true };
   });

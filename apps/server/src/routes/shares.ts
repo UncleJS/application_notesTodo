@@ -7,6 +7,7 @@ import { itemShares } from "../db/schema/shares";
 import { requireAuth } from "../middleware/auth";
 import { getItemAccess } from "../services/itemAccess";
 import { isDupEntry } from "../lib/dbErrors";
+import { itemAuditMeta, recordAudit } from "../services/audit";
 import { nowUtcSql } from "../lib/time";
 
 // Lightweight directory endpoints so any user can pick share targets.
@@ -96,22 +97,42 @@ export const shareRoutes = new Elysia({ prefix: "/api/v1" })
           .from(itemShares)
           .where(and(eq(itemShares.itemId, itemId), eq(granteeCol, body.granteeId)))
       ).find((r) => r.archivedAtUTC !== null);
+      const meta = await itemAuditMeta(itemId);
       try {
-        if (archived) {
-          await db
-            .update(itemShares)
-            .set({ archivedAtUTC: null, level: body.level, updatedAtUTC: nowUtcSql() })
-            .where(eq(itemShares.id, archived.id));
-        } else {
-          await db.insert(itemShares).values({
-            itemId,
-            userId: body.granteeType === "user" ? body.granteeId : null,
-            groupId: body.granteeType === "group" ? body.granteeId : null,
-            level: body.level,
-            createdAtUTC: nowUtcSql(),
-            updatedAtUTC: nowUtcSql(),
-          });
-        }
+        await db.transaction(async (tx) => {
+          if (archived) {
+            await tx
+              .update(itemShares)
+              .set({ archivedAtUTC: null, level: body.level, updatedAtUTC: nowUtcSql() })
+              .where(eq(itemShares.id, archived.id));
+          } else {
+            await tx.insert(itemShares).values({
+              itemId,
+              userId: body.granteeType === "user" ? body.granteeId : null,
+              groupId: body.granteeType === "group" ? body.granteeId : null,
+              level: body.level,
+              createdAtUTC: nowUtcSql(),
+              updatedAtUTC: nowUtcSql(),
+            });
+          }
+          if (meta) {
+            await recordAudit(tx, {
+              itemId,
+              itemType: meta.itemType,
+              actorUserId: user!.id,
+              action: "share_grant",
+              changes: [
+                {
+                  field: "grantee",
+                  old: null,
+                  new: { type: body.granteeType, id: body.granteeId, level: body.level },
+                },
+              ],
+              categoryId: meta.categoryId,
+              priorityId: meta.priorityId,
+            });
+          }
+        });
       } catch (err) {
         if (isDupEntry(err)) {
           set.status = 409;
@@ -143,10 +164,24 @@ export const shareRoutes = new Elysia({ prefix: "/api/v1" })
         set.status = 403;
         return { error: "only the owner can change shares" };
       }
-      await db
-        .update(itemShares)
-        .set({ level: body.level, updatedAtUTC: nowUtcSql() })
-        .where(eq(itemShares.id, share.id));
+      const meta = await itemAuditMeta(share.itemId);
+      await db.transaction(async (tx) => {
+        await tx
+          .update(itemShares)
+          .set({ level: body.level, updatedAtUTC: nowUtcSql() })
+          .where(eq(itemShares.id, share.id));
+        if (meta && share.level !== body.level) {
+          await recordAudit(tx, {
+            itemId: share.itemId,
+            itemType: meta.itemType,
+            actorUserId: user!.id,
+            action: "share_update",
+            changes: [{ field: "level", old: share.level, new: body.level }],
+            categoryId: meta.categoryId,
+            priorityId: meta.priorityId,
+          });
+        }
+      });
       return { ok: true };
     },
     { body: t.Object({ level: t.Union([t.Literal("view"), t.Literal("edit")]) }) },
@@ -162,9 +197,32 @@ export const shareRoutes = new Elysia({ prefix: "/api/v1" })
       set.status = 403;
       return { error: "only the owner can remove shares" };
     }
-    await db
-      .update(itemShares)
-      .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
-      .where(eq(itemShares.id, share.id));
+    const meta = await itemAuditMeta(share.itemId);
+    await db.transaction(async (tx) => {
+      await tx
+        .update(itemShares)
+        .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
+        .where(eq(itemShares.id, share.id));
+      if (meta) {
+        await recordAudit(tx, {
+          itemId: share.itemId,
+          itemType: meta.itemType,
+          actorUserId: user!.id,
+          action: "share_revoke",
+          changes: [
+            {
+              field: "grantee",
+              old: {
+                type: share.userId ? "user" : "group",
+                id: share.userId ?? share.groupId,
+              },
+              new: null,
+            },
+          ],
+          categoryId: meta.categoryId,
+          priorityId: meta.priorityId,
+        });
+      }
+    });
     return { ok: true };
   });

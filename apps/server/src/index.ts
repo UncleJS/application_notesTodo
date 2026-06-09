@@ -16,6 +16,7 @@ import { templateRoutes } from "./routes/templates";
 import { directoryRoutes, shareRoutes } from "./routes/shares";
 import { reminderRoutes } from "./routes/reminders";
 import { settingsRoutes } from "./routes/settings";
+import { adminAuditRoutes, auditRoutes } from "./routes/audit";
 import { startReminderWorker } from "./scheduler/reminderWorker";
 import { pruneExpiredSessions } from "./services/session";
 
@@ -44,6 +45,8 @@ const app = new Elysia()
   .use(shareRoutes)
   .use(reminderRoutes)
   .use(settingsRoutes)
+  .use(auditRoutes)
+  .use(adminAuditRoutes)
   // production: serve the built SPA (apps/web/dist) with index.html fallback
   .get("/*", async ({ path, set }) => {
     if (process.env.APP_ENV !== "production" || path.startsWith("/api/")) {

@@ -1022,6 +1022,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audit-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit log of items you changed or own
+         * @description Append-only history of item changes (who, what field, old → new, when).
+         *     Returns rows where you are the actor OR you own the item. Newest first.
+         */
+        get: operations["listAuditLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit log of all items (admin)
+         * @description All item changes across every user, with an extra `userId` (actor) filter. Newest first.
+         */
+        get: operations["listAdminAuditLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1241,6 +1282,39 @@ export interface components {
             url?: string | null;
             enabled: boolean;
             hasSecret: boolean;
+        };
+        /** @enum {string} */
+        AuditAction: "create" | "update" | "archive" | "restore" | "tag_add" | "tag_remove" | "link_add" | "link_remove" | "share_grant" | "share_revoke" | "share_update";
+        AuditChange: {
+            field: string;
+            /** @description Previous value (any JSON type, or null) */
+            old: unknown;
+            /** @description New value (any JSON type, or null) */
+            new: unknown;
+        };
+        AuditLog: {
+            id: number;
+            itemId: number;
+            /** @enum {string} */
+            itemType: "note" | "todo" | "calendar";
+            /** @description Null if the item no longer exists */
+            itemTitle?: string | null;
+            actorUserId: number;
+            actorUsername?: string | null;
+            actorDisplayName?: string | null;
+            action: components["schemas"]["AuditAction"];
+            /** @description Field-level diffs for `update`; null for create/archive/restore */
+            changes?: components["schemas"]["AuditChange"][] | null;
+            categoryId?: number | null;
+            priorityId?: number | null;
+            /** Format: date-time */
+            createdAtUTC: string;
+        };
+        AuditLogPage: {
+            logs: components["schemas"]["AuditLog"][];
+            total: number;
+            page: number;
+            limit: number;
         };
     };
     responses: {
@@ -3360,6 +3434,70 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    listAuditLogs: {
+        parameters: {
+            query?: {
+                itemType?: "note" | "todo" | "calendar";
+                action?: components["schemas"]["AuditAction"];
+                /** @description Snapshot category id */
+                category?: number;
+                /** @description Snapshot priority id */
+                priority?: number;
+                from?: string;
+                to?: string;
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audit log page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditLogPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listAdminAuditLogs: {
+        parameters: {
+            query?: {
+                /** @description Filter by actor user id */
+                userId?: number;
+                itemType?: "note" | "todo" | "calendar";
+                action?: components["schemas"]["AuditAction"];
+                category?: number;
+                priority?: number;
+                from?: string;
+                to?: string;
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audit log page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditLogPage"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
         };
     };
 }

@@ -14,6 +14,7 @@ import { templateRoutes } from "../routes/templates";
 import { directoryRoutes, shareRoutes } from "../routes/shares";
 import { reminderRoutes } from "../routes/reminders";
 import { settingsRoutes } from "../routes/settings";
+import { adminAuditRoutes, auditRoutes } from "../routes/audit";
 
 /** Same route composition + error handler as index.ts, without listen(). */
 export function makeApp() {
@@ -37,7 +38,9 @@ export function makeApp() {
     .use(directoryRoutes)
     .use(shareRoutes)
     .use(reminderRoutes)
-    .use(settingsRoutes);
+    .use(settingsRoutes)
+    .use(auditRoutes)
+    .use(adminAuditRoutes);
 }
 
 export type TestApp = ReturnType<typeof makeApp>;

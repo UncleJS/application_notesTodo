@@ -6,6 +6,7 @@ import { itemTags, tags } from "../db/schema/linksTags";
 import { requireAuth } from "../middleware/auth";
 import { atLeast, getItemAccess } from "../services/itemAccess";
 import { isDupEntry } from "../lib/dbErrors";
+import { recordAudit } from "../services/audit";
 import { nowUtcSql } from "../lib/time";
 
 /**
@@ -48,7 +49,7 @@ export const bulkRoutes = new Elysia({ prefix: "/api/v1/todos" })
         }
         const row = (
           await db
-            .select({ id: items.id })
+            .select({ id: items.id, categoryId: items.categoryId, priorityId: items.priorityId })
             .from(items)
             .where(and(eq(items.id, id), eq(items.itemType, "todo")))
             .limit(1)
@@ -57,18 +58,41 @@ export const bulkRoutes = new Elysia({ prefix: "/api/v1/todos" })
           skipped.push({ id, reason: "not a todo" });
           continue;
         }
+        const snap = { categoryId: row.categoryId, priorityId: row.priorityId };
 
         if (body.op === "done") {
-          await db
-            .update(todos)
-            .set({ done: true, doneAtUTC: nowUtcSql() })
-            .where(and(eq(todos.itemId, id), eq(todos.done, false)));
-          await db.update(items).set({ updatedAtUTC: nowUtcSql() }).where(eq(items.id, id));
+          await db.transaction(async (tx) => {
+            const [res] = await tx
+              .update(todos)
+              .set({ done: true, doneAtUTC: nowUtcSql() })
+              .where(and(eq(todos.itemId, id), eq(todos.done, false)));
+            await tx.update(items).set({ updatedAtUTC: nowUtcSql() }).where(eq(items.id, id));
+            // only audit todos actually flipped from not-done → done
+            if (res.affectedRows > 0) {
+              await recordAudit(tx, {
+                itemId: id,
+                itemType: "todo",
+                actorUserId: user!.id,
+                action: "update",
+                changes: [{ field: "done", old: false, new: true }],
+                ...snap,
+              });
+            }
+          });
         } else if (body.op === "archive") {
-          await db
-            .update(items)
-            .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
-            .where(eq(items.id, id));
+          await db.transaction(async (tx) => {
+            await tx
+              .update(items)
+              .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
+              .where(eq(items.id, id));
+            await recordAudit(tx, {
+              itemId: id,
+              itemType: "todo",
+              actorUserId: user!.id,
+              action: "archive",
+              ...snap,
+            });
+          });
         } else {
           // addTag — restore an archived attachment if present, else insert (dup = already tagged)
           const archived = (
@@ -78,19 +102,29 @@ export const bulkRoutes = new Elysia({ prefix: "/api/v1/todos" })
               .where(and(eq(itemTags.itemId, id), eq(itemTags.tagId, body.tagId!)))
           ).find((r) => r.archivedAtUTC !== null);
           try {
-            if (archived) {
-              await db
-                .update(itemTags)
-                .set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() })
-                .where(eq(itemTags.id, archived.id));
-            } else {
-              await db.insert(itemTags).values({
+            await db.transaction(async (tx) => {
+              if (archived) {
+                await tx
+                  .update(itemTags)
+                  .set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() })
+                  .where(eq(itemTags.id, archived.id));
+              } else {
+                await tx.insert(itemTags).values({
+                  itemId: id,
+                  tagId: body.tagId!,
+                  createdAtUTC: nowUtcSql(),
+                  updatedAtUTC: nowUtcSql(),
+                });
+              }
+              await recordAudit(tx, {
                 itemId: id,
-                tagId: body.tagId!,
-                createdAtUTC: nowUtcSql(),
-                updatedAtUTC: nowUtcSql(),
+                itemType: "todo",
+                actorUserId: user!.id,
+                action: "tag_add",
+                changes: [{ field: "tagId", old: null, new: body.tagId! }],
+                ...snap,
               });
-            }
+            });
           } catch (err) {
             if (!isDupEntry(err)) throw err; // dup = already tagged — count as updated
           }

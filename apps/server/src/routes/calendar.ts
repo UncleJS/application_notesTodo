@@ -12,6 +12,8 @@ import { isoToSql, nowUtcSql, sqlToDate, sqlToIso } from "../lib/time";
 import { logWarn } from "../lib/log";
 import { expandOccurrences, rruleError } from "../services/recurrence";
 import { invalidLookupIds } from "../services/lookups";
+import { diffFields, recordAudit } from "../services/audit";
+import type { AuditChange } from "../db/schema/audit";
 
 export function calendarDto(
   item: typeof items.$inferSelect,
@@ -319,6 +321,14 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
             body.exdatesUTC.map((d) => ({ calendarItemId: res.insertId, exdateAtUTC: isoToSql(d) })),
           );
         }
+        await recordAudit(tx, {
+          itemId: res.insertId,
+          itemType: "calendar",
+          actorUserId: user!.id,
+          action: "create",
+          categoryId: body.categoryId ?? null,
+          priorityId: body.priorityId ?? null,
+        });
         return res.insertId;
       });
       const row = (await loadCalendarItem(id))!;
@@ -375,6 +385,41 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
         set.status = 422;
         return { error: `unknown ${badLookups.join(", ")}` };
       }
+      const before = (await loadCalendarItem(id))!;
+      const next: Record<string, unknown> = {};
+      if (body.title !== undefined) next.title = body.title;
+      if (body.categoryId !== undefined) next.categoryId = body.categoryId;
+      if (body.priorityId !== undefined) next.priorityId = body.priorityId;
+      if (body.startAtUTC !== undefined) next.startAtUTC = isoToSql(body.startAtUTC);
+      if (body.endAtUTC !== undefined) next.endAtUTC = body.endAtUTC ? isoToSql(body.endAtUTC) : null;
+      if (body.allDay !== undefined) next.allDay = body.allDay;
+      if (body.location !== undefined) next.location = body.location;
+      if (body.descriptionMd !== undefined) next.descriptionMd = body.descriptionMd;
+      if (body.rrule !== undefined) next.rrule = body.rrule;
+      if (body.timezone !== undefined) next.timezone = body.timezone;
+      const changes: AuditChange[] = diffFields(
+        {
+          title: before.items.title,
+          categoryId: before.items.categoryId,
+          priorityId: before.items.priorityId,
+          startAtUTC: before.calendar_items.startAtUTC,
+          endAtUTC: before.calendar_items.endAtUTC,
+          allDay: before.calendar_items.allDay,
+          location: before.calendar_items.location,
+          descriptionMd: before.calendar_items.descriptionMd,
+          rrule: before.calendar_items.rrule,
+          timezone: before.calendar_items.timezone,
+        },
+        next,
+        ["title", "categoryId", "priorityId", "startAtUTC", "endAtUTC", "allDay", "location", "descriptionMd", "rrule", "timezone"],
+      );
+      if (body.exdatesUTC !== undefined) {
+        const oldEx = [...before.exdates].sort();
+        const newEx = [...body.exdatesUTC].sort();
+        if (JSON.stringify(oldEx) !== JSON.stringify(newEx)) {
+          changes.push({ field: "exdates", old: before.exdates, new: body.exdatesUTC });
+        }
+      }
       await db.transaction(async (tx) => {
         await tx
           .update(items)
@@ -405,6 +450,15 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
             );
           }
         }
+        await recordAudit(tx, {
+          itemId: id,
+          itemType: "calendar",
+          actorUserId: user!.id,
+          action: "update",
+          changes,
+          categoryId: body.categoryId !== undefined ? body.categoryId : before.items.categoryId,
+          priorityId: body.priorityId !== undefined ? body.priorityId : before.items.priorityId,
+        });
       });
       const row = (await loadCalendarItem(id))!;
       return calendarDto(row.items, row.calendar_items, row.exdates);
@@ -434,7 +488,21 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
       set.status = access === null ? 404 : 403;
       return { error: access === null ? "not found" : "only the owner can archive" };
     }
-    await db.update(items).set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() }).where(eq(items.id, id));
+    const before = (await db.select().from(items).where(eq(items.id, id)).limit(1))[0]!;
+    await db.transaction(async (tx) => {
+      await tx
+        .update(items)
+        .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
+        .where(eq(items.id, id));
+      await recordAudit(tx, {
+        itemId: id,
+        itemType: "calendar",
+        actorUserId: user!.id,
+        action: "archive",
+        categoryId: before.categoryId,
+        priorityId: before.priorityId,
+      });
+    });
     return { ok: true };
   })
   .post("/items/:id/restore", async ({ user, params, set }) => {
@@ -444,6 +512,20 @@ export const calendarRoutes = new Elysia({ prefix: "/api/v1/calendar" })
       set.status = access === null ? 404 : 403;
       return { error: access === null ? "not found" : "only the owner can restore" };
     }
-    await db.update(items).set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() }).where(eq(items.id, id));
+    const before = (await db.select().from(items).where(eq(items.id, id)).limit(1))[0]!;
+    await db.transaction(async (tx) => {
+      await tx
+        .update(items)
+        .set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() })
+        .where(eq(items.id, id));
+      await recordAudit(tx, {
+        itemId: id,
+        itemType: "calendar",
+        actorUserId: user!.id,
+        action: "restore",
+        categoryId: before.categoryId,
+        priorityId: before.priorityId,
+      });
+    });
     return { ok: true };
   });

@@ -9,6 +9,7 @@ import { atLeast, getItemAccess, isStaleItem, visibleItemsCond } from "../servic
 import { tagIdsByItem } from "../services/tags";
 import { invalidLookupIds } from "../services/lookups";
 import { itemIdsWithLinks } from "../services/links";
+import { diffFields, recordAudit } from "../services/audit";
 import { isoToSql, nowUtcSql, sqlToIso } from "../lib/time";
 
 export function todoDto(item: typeof items.$inferSelect, todo: typeof todos.$inferSelect, tagIds: number[] = []) {
@@ -113,6 +114,14 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
           notesMd: body.notesMd ?? null,
           statusId: body.statusId ?? null,
         });
+        await recordAudit(tx, {
+          itemId: res.insertId,
+          itemType: "todo",
+          actorUserId: user!.id,
+          action: "create",
+          categoryId: body.categoryId ?? null,
+          priorityId: body.priorityId ?? null,
+        });
         return res.insertId;
       });
       const row = (await loadTodo(id))!;
@@ -164,6 +173,28 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
         set.status = 422;
         return { error: `unknown ${badLookups.join(", ")}` };
       }
+      const before = (await loadTodo(id))!;
+      const next: Record<string, unknown> = {};
+      if (body.title !== undefined) next.title = body.title;
+      if (body.categoryId !== undefined) next.categoryId = body.categoryId;
+      if (body.priorityId !== undefined) next.priorityId = body.priorityId;
+      if (body.dueAtUTC !== undefined) next.dueAtUTC = body.dueAtUTC ? isoToSql(body.dueAtUTC) : null;
+      if (body.notesMd !== undefined) next.notesMd = body.notesMd;
+      if (body.statusId !== undefined) next.statusId = body.statusId;
+      if (body.done !== undefined) next.done = body.done;
+      const changes = diffFields(
+        {
+          title: before.items.title,
+          categoryId: before.items.categoryId,
+          priorityId: before.items.priorityId,
+          dueAtUTC: before.todos.dueAtUTC,
+          notesMd: before.todos.notesMd,
+          statusId: before.todos.statusId,
+          done: before.todos.done,
+        },
+        next,
+        ["title", "categoryId", "priorityId", "dueAtUTC", "notesMd", "statusId", "done"],
+      );
       await db.transaction(async (tx) => {
         await tx
           .update(items)
@@ -185,6 +216,15 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
         if (Object.keys(todoSet).length > 0) {
           await tx.update(todos).set(todoSet).where(eq(todos.itemId, id));
         }
+        await recordAudit(tx, {
+          itemId: id,
+          itemType: "todo",
+          actorUserId: user!.id,
+          action: "update",
+          changes,
+          categoryId: body.categoryId !== undefined ? body.categoryId : before.items.categoryId,
+          priorityId: body.priorityId !== undefined ? body.priorityId : before.items.priorityId,
+        });
       });
       const row = (await loadTodo(id))!;
       return todoDto(row.items, row.todos);
@@ -216,11 +256,22 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
       return { error: "not found" };
     }
     const done = !row.todos.done;
-    await db
-      .update(todos)
-      .set({ done, doneAtUTC: done ? nowUtcSql() : null })
-      .where(eq(todos.itemId, id));
-    await db.update(items).set({ updatedAtUTC: nowUtcSql() }).where(eq(items.id, id));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(todos)
+        .set({ done, doneAtUTC: done ? nowUtcSql() : null })
+        .where(eq(todos.itemId, id));
+      await tx.update(items).set({ updatedAtUTC: nowUtcSql() }).where(eq(items.id, id));
+      await recordAudit(tx, {
+        itemId: id,
+        itemType: "todo",
+        actorUserId: user!.id,
+        action: "update",
+        changes: [{ field: "done", old: row.todos.done, new: done }],
+        categoryId: row.items.categoryId,
+        priorityId: row.items.priorityId,
+      });
+    });
     const updated = (await loadTodo(id))!;
     return todoDto(updated.items, updated.todos);
   })
@@ -231,7 +282,21 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
       set.status = access === null ? 404 : 403;
       return { error: access === null ? "not found" : "only the owner can archive" };
     }
-    await db.update(items).set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() }).where(eq(items.id, id));
+    const before = (await db.select().from(items).where(eq(items.id, id)).limit(1))[0]!;
+    await db.transaction(async (tx) => {
+      await tx
+        .update(items)
+        .set({ archivedAtUTC: nowUtcSql(), updatedAtUTC: nowUtcSql() })
+        .where(eq(items.id, id));
+      await recordAudit(tx, {
+        itemId: id,
+        itemType: "todo",
+        actorUserId: user!.id,
+        action: "archive",
+        categoryId: before.categoryId,
+        priorityId: before.priorityId,
+      });
+    });
     return { ok: true };
   })
   .post("/:id/restore", async ({ user, params, set }) => {
@@ -241,6 +306,20 @@ export const todoRoutes = new Elysia({ prefix: "/api/v1/todos" })
       set.status = access === null ? 404 : 403;
       return { error: access === null ? "not found" : "only the owner can restore" };
     }
-    await db.update(items).set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() }).where(eq(items.id, id));
+    const before = (await db.select().from(items).where(eq(items.id, id)).limit(1))[0]!;
+    await db.transaction(async (tx) => {
+      await tx
+        .update(items)
+        .set({ archivedAtUTC: null, updatedAtUTC: nowUtcSql() })
+        .where(eq(items.id, id));
+      await recordAudit(tx, {
+        itemId: id,
+        itemType: "todo",
+        actorUserId: user!.id,
+        action: "restore",
+        categoryId: before.categoryId,
+        priorityId: before.priorityId,
+      });
+    });
     return { ok: true };
   });
