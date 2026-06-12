@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 
 interface AdminUser {
@@ -34,7 +33,7 @@ interface Member {
   displayName: string | null;
 }
 
-function UsersTab() {
+export function UsersTab() {
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin", "users"] });
   const [showArchived, setShowArchived] = useState(false);
@@ -315,7 +314,7 @@ function GroupMembers({ group }: { group: Group }) {
   );
 }
 
-function GroupsTab() {
+export function GroupsTab() {
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin", "groups"] });
   const [showArchived, setShowArchived] = useState(false);
@@ -409,26 +408,6 @@ function GroupsTab() {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-export default function AdminPage() {
-  return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-bold text-foreground">Admin</h1>
-      <Tabs defaultValue="users">
-        <TabsList>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="groups">Groups</TabsTrigger>
-        </TabsList>
-        <TabsContent value="users">
-          <UsersTab />
-        </TabsContent>
-        <TabsContent value="groups">
-          <GroupsTab />
-        </TabsContent>
-      </Tabs>
     </div>
   );
 }

@@ -8,7 +8,6 @@ import { SkeletonList } from "@/components/Skeleton";
 
 // Pages are code-split — each becomes its own chunk so the initial bundle
 // stays small (rrule + calendar code only load when needed).
-const AdminPage = lazy(() => import("@/pages/AdminPage"));
 const NotesPage = lazy(() => import("@/pages/NotesPage"));
 const NoteEditorPage = lazy(() => import("@/pages/NoteEditorPage"));
 const TodosPage = lazy(() => import("@/pages/TodosPage"));
@@ -44,7 +43,6 @@ export default function App() {
           <Route path="/templates" element={page(<TemplatesPage />)} />
           <Route path="/activity" element={page(<AuditLogPage />)} />
           <Route path="/settings" element={page(<SettingsPage />)} />
-          <Route path="/admin" element={page(<AdminPage />)} />
         </Route>
       </Routes>
     </BrowserRouter>

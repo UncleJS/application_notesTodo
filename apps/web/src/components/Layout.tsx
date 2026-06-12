@@ -96,11 +96,6 @@ export default function Layout() {
               {item.label}
             </NavLink>
           ))}
-          {me.data?.isAdmin && (
-            <NavLink to="/admin" className={linkCls} onClick={() => setOpen(false)}>
-              Admin
-            </NavLink>
-          )}
         </nav>
         <div className="mt-auto flex flex-col gap-2 px-2">
           <span className="text-xs text-foreground">{me.data?.displayName ?? me.data?.username}</span>

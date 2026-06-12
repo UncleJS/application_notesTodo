@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useMe, type Me } from "@/features/auth/useMe";
 import { useCategories, usePriorities, useStatuses } from "@/features/lookups/useLookups";
 import { useTags } from "@/features/tags/useTags";
+import { UsersTab, GroupsTab } from "@/components/settings/AdminTabs";
 import { ColorInput } from "@/components/ColorInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -520,16 +521,21 @@ export default function SettingsPage() {
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-bold text-foreground">Settings</h1>
       {!canEdit && <p className="text-sm text-foreground">Lookups are managed by an administrator.</p>}
-      <Tabs defaultValue="categories">
+      <Tabs defaultValue="profile">
         <TabsList>
+          <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="priorities">Priorities</TabsTrigger>
           <TabsTrigger value="statuses">Statuses</TabsTrigger>
           <TabsTrigger value="tags">Tags</TabsTrigger>
+          {canEdit && <TabsTrigger value="users">Users</TabsTrigger>}
+          {canEdit && <TabsTrigger value="groups">Groups</TabsTrigger>}
           {canEdit && <TabsTrigger value="smtp">Email (SMTP)</TabsTrigger>}
           {canEdit && <TabsTrigger value="webhook">Webhook</TabsTrigger>}
-          <TabsTrigger value="profile">Profile</TabsTrigger>
         </TabsList>
+        <TabsContent value="profile">
+          <ProfileTab />
+        </TabsContent>
         <TabsContent value="categories">
           <LookupManager
             basePath="/api/v1/categories"
@@ -579,6 +585,16 @@ export default function SettingsPage() {
           />
         </TabsContent>
         {canEdit && (
+          <TabsContent value="users">
+            <UsersTab />
+          </TabsContent>
+        )}
+        {canEdit && (
+          <TabsContent value="groups">
+            <GroupsTab />
+          </TabsContent>
+        )}
+        {canEdit && (
           <TabsContent value="smtp">
             <SmtpTab />
           </TabsContent>
@@ -588,9 +604,6 @@ export default function SettingsPage() {
             <WebhookTab />
           </TabsContent>
         )}
-        <TabsContent value="profile">
-          <ProfileTab />
-        </TabsContent>
       </Tabs>
     </div>
   );
