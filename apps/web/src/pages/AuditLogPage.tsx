@@ -142,7 +142,7 @@ function ChangeList({ log, maps }: { log: AuditLog; maps: LookupMaps }) {
             <span className="max-w-[18rem] truncate text-foreground/80" title={oldStr}>
               {oldStr}
             </span>
-            <span className="text-foreground/60">→</span>
+            <span className="text-foreground/60">=&gt;</span>
             <span className="max-w-[18rem] truncate text-foreground" title={newStr}>
               {newStr}
             </span>
