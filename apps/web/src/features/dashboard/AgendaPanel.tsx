@@ -27,12 +27,11 @@ interface Occurrence {
   priorityId: number | null;
 }
 
-type Preset = "7" | "14" | "15" | "21" | "month" | "custom";
+type Preset = "7" | "14" | "21" | "month" | "custom";
 
 const PRESET_DAYS: Record<Exclude<Preset, "custom">, number> = {
   "7": 7,
   "14": 14,
-  "15": 15,
   "21": 21,
   month: 30,
 };
@@ -47,8 +46,8 @@ function dayLabel(key: string, todayKey: string, tomorrowKey: string): string {
 }
 
 export function AgendaPanel() {
-  const [preset, setPreset] = useState<Preset>("15");
-  const [customDays, setCustomDays] = useState(15);
+  const [preset, setPreset] = useState<Preset>("14");
+  const [customDays, setCustomDays] = useState(14);
 
   const days =
     preset === "custom" ? Math.min(400, Math.max(1, customDays || 1)) : PRESET_DAYS[preset];
@@ -97,7 +96,6 @@ export function AgendaPanel() {
             <TabsList>
               <TabsTrigger value="7">7d</TabsTrigger>
               <TabsTrigger value="14">14d</TabsTrigger>
-              <TabsTrigger value="15">15d</TabsTrigger>
               <TabsTrigger value="21">21d</TabsTrigger>
               <TabsTrigger value="month">Month</TabsTrigger>
               <TabsTrigger value="custom">Custom</TabsTrigger>
