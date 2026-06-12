@@ -76,7 +76,7 @@ export default function DashboardPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Next 7 days</CardTitle>
+            <CardTitle>Events next 7 days</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-1">
             {events.data?.slice(0, 10).map((o, i) => (
