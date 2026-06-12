@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckSquare, ChevronLeft, ChevronRight, Link2, Repeat, Square } from "lucide-react";
 import { api } from "@/lib/api";
-import { formatLocal } from "@/lib/formatLocal";
+import { formatLocal, localDayKey, localTime } from "@/lib/formatLocal";
 import { getDefaults, rememberDefaults } from "@/lib/itemDefaults";
 import { useToast } from "@/components/ui/toast";
 import { useRegisterCreateAction } from "@/features/command/CreateActionContext";
@@ -100,18 +100,6 @@ const emptyForm: CalForm = {
   categoryId: null,
   priorityId: null,
 };
-
-function localDayKey(iso: string): string {
-  const d = new Date(iso);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-function localTime(iso: string): string {
-  const d = new Date(iso);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}`;
-}
 
 /** Monday-based start of the week containing d. */
 function weekStart(d: Date): Date {

@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { formatLocal } from "@/lib/formatLocal";
 import { QueryError } from "@/components/QueryError";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AgendaPanel } from "@/features/dashboard/AgendaPanel";
 import type { Note } from "./NotesPage";
 import type { Todo } from "./TodosPage";
 
@@ -115,6 +116,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      <AgendaPanel />
     </div>
   );
 }
